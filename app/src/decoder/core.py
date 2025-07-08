@@ -105,7 +105,6 @@ class Decoder(Entity):
         result = self._predict_impl(*args, **kwargs)
         self._confidence = self.confidence()
         self._reset_motors()
-        # self._auditor.activity.total_motors += len(motors)
         return result
     
     def _predict_impl(self, *args, **kwargs):
@@ -149,7 +148,6 @@ class Decoder(Entity):
                     continue
 
 
-# this is the one that finds center of mass.
 class Regressor(Decoder):
     def __init__(self):
         Decoder.__init__(self, type=DecoderType.REGRESSOR, data_types=[int, float])
@@ -163,14 +161,6 @@ class Regressor(Decoder):
             raise ValueError("Total activation (sum of states) is zero. Cannot compute center of mass.")
         
         return numerator / denominator
-    
-    # def confidence(self):
-    #     motors = self.get_active_motors()
-    #     confidence = 0
-    #     for m in motors:
-    #         confidence += m.get_state()
-
-    #     return confidence/len(motors) 
     
 
 
@@ -186,11 +176,6 @@ class ArgMax(Decoder):
     def _predict_impl(self):
         max_motor = self._find_max_motor()
         return max_motor.answer
-    
-    # def confidence(self):
-    #     max_motor: Motor = self._find_max_motor()
-    #     return max_motor.get_state()
-
 
 
 class SoftMax(Decoder):
@@ -206,14 +191,6 @@ class SoftMax(Decoder):
         activations = [motor.get_state() for motor in self.get_active_motors()]
         return self.softmax(activations)
     
-    # def confidence(self):
-    #     motors = self.get_active_motors()
-    #     confidence = 0
-    #     for m in motors:
-    #         confidence += m.get_state()
-
-    #     return confidence/len(motors) 
-    
 
 
 class Binary(Decoder):
@@ -227,10 +204,6 @@ class Binary(Decoder):
         answers = [motor.get_state() for motor in self.get_active_motors()]
         index = answers.index(max(answers))
         return self._outputs[index]
-    
-    # work on this later
-    # def confidence(self):
-    #     return 0
 
 
 
@@ -259,10 +232,6 @@ class Vector(Decoder):
             result_vector = [value / total_activation for value in result_vector]
 
         return result_vector
-    
-    # work on this sometime later
-    # def confidence(self):
-    #     return 0
 
 
 
@@ -278,15 +247,6 @@ class TopK(Decoder):
         sorted_motors = self._sort_motors()
         self._k = k
         return [motor.answer for motor in sorted_motors][:k]
-    
-    # def confidence(self):
-    #     motors = self._sort_motors()[:self._k]
-    #     confidence = 0
-        
-    #     for m in motors:
-    #         confidence += m.get_state()
-
-    #     return confidence/len(motors) 
 
 
 
@@ -298,13 +258,3 @@ class Bitmask(Decoder):
     def _predict_impl(self, threshold):
         self.threshold = threshold
         return [motor.answer for motor in self.get_active_motors() if motor.get_state() > threshold]
-    
-    # def confidence(self):
-    #     motors = self.get_active_motors()
-    #     confidence = 0
-    #     for m in motors:
-    #         state_value = m.get_state()
-    #         if state_value > self.threshold:
-    #             confidence += m.get_state()
-
-    #     return confidence/len(motors) 

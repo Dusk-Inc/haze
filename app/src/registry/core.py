@@ -69,6 +69,8 @@ class Registry(Threader):
 
         self._reset_connectors()
 
+        print(self._strength)
+
         for c in self._connectors:
             c.save_state()
 

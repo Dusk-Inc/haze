@@ -37,6 +37,5 @@ def main():
 
     print(reward_scoring)
 
-
 if __name__ == '__main__':
     main()

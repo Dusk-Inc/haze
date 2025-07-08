@@ -168,16 +168,12 @@ class Haze:
             neurons: list[NeuronPackageModel] = []
             terminus_neurons = core.get_neuron_data(core._terminus_path)
             nexus_neurons = core.get_neuron_data(core._nexus_path)
-            # aperture_neurons = core.get_neuron_data(core._aperture_path)
             terminus_package = self._package_inters(terminus_neurons, MeshType.TERMINUS)
             self.network.mesh.terminus._inters = [neuron.neuron for neuron in terminus_package]
             nexus_package = self._package_inters(nexus_neurons, MeshType.NEXUS)
             self.network.mesh.nexus._inters = [neuron.neuron for neuron in nexus_package]
-            # aperture_package = self._package_inters(aperture_neurons, MeshType.APERTURE)
-            # self.network.mesh.aperature._inters = [neuron.neuron for neuron in aperture_package]
             neurons.extend(terminus_package)
             neurons.extend(nexus_package)
-            # neurons.extend(aperture_package)
 
             for encoder_type in EncoderType:
                 encoder_path = os.path.join(core._encoder_path, encoder_type)
@@ -270,7 +266,6 @@ class Haze:
         aggregate_confidence = self.get_aggregate_confidence()
         growth: AuditResultsModel = auditor.stimulate_growth(reward=reward, confidence=aggregate_confidence)
         self.network.handle_growth(growth)
-        # print(registry._strength)
 
         all_neurons = self.network.get_all_neurons()
         faulty_connections: list[Connector] = []
@@ -292,9 +287,6 @@ class Haze:
             if len(n._connections) < 2 and len(n._connections) > 0:
                 core.remove_from_file(n._connections[0].get_id(as_string=True), core._connection_path)
                 n.clear_connections()
-                # if n.mesh == MeshType.APERTURE:
-                #     self.network.mesh.aperature.connect_neurons([n])
-                #     self.network.connect_mesh([n], self.network.mesh.nexus.get_inters())
                 if n.mesh == MeshType.NEXUS:
                     self.network.mesh.nexus.connect_neurons([n])
                     self.network.connect_mesh([n], self.network.mesh.terminus.get_inters())

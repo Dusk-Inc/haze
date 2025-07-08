@@ -7,7 +7,5 @@ def clamp(x: float, min_val: float = 0.1, max_val: float = 0.9) -> float:
 def normalize(data: NDArray):
     min_val = np.min(data)
     max_val = np.max(data)
-
-    # Apply min-max normalization
     normalized_data = (data - min_val) / (max_val - min_val)
     return normalized_data

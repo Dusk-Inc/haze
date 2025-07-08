@@ -73,7 +73,6 @@ class CoreIO:
     def _is_dir_empty(self, path) -> bool:
         return any(os.path.isfile(os.path.join(path, f)) for f in os.listdir(path))
 
-    # check if file exists
     def is_empty(self) -> bool:
         if not self._persist:
             return True
