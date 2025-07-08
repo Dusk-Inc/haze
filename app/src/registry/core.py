@@ -6,6 +6,7 @@ from ..threader.core import Threader
 from ..config.core import Config
 from ..injector.core import Injector
 from ..injector.enums import GlobalTypes
+from typing import Optional
 import random
 
 class Registry(Threader):
@@ -14,7 +15,7 @@ class Registry(Threader):
         self._strength: NDArray = np.array([])
         self._epsilon: NDArray = np.array([])
         self._status: NDArray = np.array([])
-        self._decay: NDArray = 0.9
+        self._decay: float = 0.9
         self._connectors: list[IConnector] = []
         self._threshold: float = threshold
         self._config: Config = Injector.resolve(name=GlobalTypes.CONFIG)
@@ -44,7 +45,7 @@ class Registry(Threader):
                 saved_index: int = self.dequeue()
             self._status[saved_index] = 1
 
-    def add_connector(self, connector: IConnector, strength: float = None, epsilon: float = None):
+    def add_connector(self, connector: IConnector, strength: Optional[float] = None, epsilon: Optional[float] = None):
         if strength is None:
             strength = random.uniform(0.4, 0.9)
 
@@ -67,6 +68,8 @@ class Registry(Threader):
         self._epsilon[active_mask] *= self._config.epsilon_decay
 
         self._reset_connectors()
+
+        print(self._strength)
 
         for c in self._connectors:
             c.save_state()

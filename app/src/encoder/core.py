@@ -20,7 +20,6 @@ class Encoder(Entity):
             data_types: list[Type]
         ):
         Entity.__init__(self)
-        # self._sensors: list[Sensor] = []
         self._data_types: list[Type] = data_types
         self._type = type
         self._auditor: Auditor = Injector.resolve(GlobalTypes.AUDITOR)
@@ -57,7 +56,6 @@ class Encoder(Entity):
     def propogate(self, input_data: list[Any]):
         sensors = self.get_sensors()
         self.check_sensors(input_data)
-        # self._auditor.activity.total_sensors += len(sensors) - self._auditor.activity.total_sensors
         self._auditor.activity.features += len(input_data) - self._auditor.activity.features
 
         with ThreadPoolExecutor() as executor:
@@ -93,7 +91,6 @@ class NumericEncoder(Encoder):
         return scaled
     
     def propogate(self, input_data: list[Any]):
-        # this is located here because there might be things like tokenizers that need to run to allow Haze to understand input.
         input_data = self.normalize(input_data)
         return super().propogate(input_data)
 

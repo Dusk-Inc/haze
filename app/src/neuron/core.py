@@ -131,7 +131,7 @@ class Motor(Neuron, Threader):
             self._signals = np.append(self._signals, signal.get_actual())
 
     def get_state(self):
-        result = np.mean(self._signals)
+        result = np.sum(self._signals)
         if np.isnan(result):
             raise ValueError("State of motor is NaN.")
         

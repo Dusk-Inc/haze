@@ -65,14 +65,12 @@ class Auditor:
             
         self.clear()
         clean_audit = AuditResultsModel(
-            aperture_growth=0,
             nexus_growth=0,
             terminus_growth=0
         )
         return clean_audit
 
     def determine_growth(self) -> AuditResultsModel:
-        total_sensors = self._io.get_neuron_total(transformer_type=TransformerTypes.ENCODER)
         total_motors = self._io.get_neuron_total(transformer_type=TransformerTypes.DECODER)
         error_rate = self.get_error_rate()
         confidence = self.get_confidence_score()
@@ -80,11 +78,6 @@ class Auditor:
         d = self.config.growth_rate * (1 - error_rate) + (1 - self.config.growth_rate) * (1 - confidence)
         d = max(0.0, min(1.0, d))
         nexus_growth = int(self.activity.nexus_size/(self.config.n_nexus * d * f))
-
-        if total_sensors > 0 and self.activity.new_sensors > 0:
-            aperture_growth = int(self.config.n_aperture * d * (self.activity.new_sensors**2/total_sensors))
-        else:
-            aperture_growth = 0
         
         if total_motors > 0 and self.activity.new_motors > 0:
             terminus_growth = int(self.config.n_terminus * d * (self.activity.new_motors**2/total_motors))
@@ -95,18 +88,9 @@ class Auditor:
         self.confidence_history = [1]
         self.clear()
         return AuditResultsModel(
-            aperture_growth=self.get_aperture_growth(aperture_growth, total_sensors),
             nexus_growth=clamp(nexus_growth,min_val=1,max_val=3),
             terminus_growth=self.get_terminus_growth(terminus_growth, total_motors)
         )
-    
-    # if the aperture is less than the total number of sensors, and the growth won't make it larger, clamp the total number of sensors. Otherwise, business as usual.
-    def get_aperture_growth(self, aperture_growth: int, total_sensors: int) -> int:
-        aperture_size = len(self._network.mesh.aperature.get_inters())
-        if aperture_size < aperture_growth + total_sensors:
-            return (total_sensors - aperture_size) + aperture_growth
-        
-        return aperture_growth
 
     def get_terminus_growth(self, terminus_growth: int, total_motors: int):
         terminus_size = len(self._network.mesh.terminus.get_inters())

@@ -15,10 +15,11 @@ from ..auditor.models import AuditResultsModel
 from ..neuron_io.core import NeuronIO
 from ..neuron_io.enums import TransformerTypes
 from ..terminal.errors import IdenticalConnectionError
+from typing import Optional
 
 class Network:
     def __init__(self) -> None:
-        self.mesh: MeshModel = None
+        self.mesh: MeshModel
         self.resources: int = 0
         self.state = []
         self._io: NeuronIO = Injector.resolve(name=GlobalTypes.NEURON_IO)
@@ -26,7 +27,6 @@ class Network:
 
     def get_all_neurons(self) -> list[Inter]:
         neuron_list = []
-        neuron_list.extend(self.mesh.aperature.get_inters())
         neuron_list.extend(self.mesh.nexus.get_inters())
         neuron_list.extend(self.mesh.terminus.get_inters())
         return neuron_list
@@ -50,7 +50,7 @@ class Network:
         motor.save_state()
 
     def connect_sensor(self, sensor: Sensor):
-        for a in self.mesh.aperature.get_inters():
+        for a in self.mesh.nexus.get_inters():
             try:
                 connector = Connector(dendrite=a)
                 sensor.post_connection(connector)
@@ -67,15 +67,12 @@ class Network:
             terminus_size: int = 3
         ):
         self.instantiate_mesh()
-        self.mesh.aperature.add_neurons(aperature_size)
         self.mesh.nexus.add_neurons(nexus_size)
         self.mesh.terminus.add_neurons(terminus_size)
-        self.connect_mesh(self.mesh.aperature.get_inters(), self.mesh.nexus.get_inters())
         self.connect_mesh(self.mesh.nexus.get_inters(), self.mesh.terminus.get_inters())
 
     def instantiate_mesh(self):
         self.mesh = MeshModel(
-            aperature=Mesh(mesh=MeshType.APERTURE),
             nexus=Mesh(mesh=MeshType.NEXUS),
             terminus=Mesh(mesh=MeshType.TERMINUS)
         )
@@ -94,10 +91,8 @@ class Network:
                 n.save_state()
 
     def handle_growth(self, auditor_results: AuditResultsModel):
-        new_aperture_inters = self.mesh.aperature.add_neurons(auditor_results.aperture_growth)
         new_nexus_inters = self.mesh.nexus.add_neurons(auditor_results.nexus_growth)
         self.mesh.terminus.add_neurons(auditor_results.terminus_growth)
-        self.connect_mesh(new_aperture_inters, self.mesh.nexus.get_inters())
         self.connect_mesh(new_nexus_inters, self.mesh.terminus.get_inters())
         sensors = self._io.get_all_neurons_by_transformer(transformer_type=TransformerTypes.ENCODER)
         motors = self._io.get_all_neurons_by_transformer(transformer_type=TransformerTypes.DECODER)
