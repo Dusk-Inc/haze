@@ -185,10 +185,15 @@ class ChainSpec(BaseModel):
 
 
 class LabelEntry(BaseModel):
-    """One decoder's labels and the motors they are bound to.
+    """One decoder's labels and the motors that answer for them.
+
+    Holds one of two bindings. In **one-hot** mode a label owns a motor and `motor_ids` runs
+    parallel to `values`. In **code** mode a label owns a codeword, `codes` runs parallel to
+    `values`, and `bit_motors` holds one `[on, off]` pair per bit — so the motor count is
+    logarithmic in the label count rather than equal to it. See specs/decoding.md.
 
     `value_type` is recorded because decoders distinguish an integer label from its string
-    form and JSON does not. See specs/decoding.md.
+    form and JSON does not.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -197,11 +202,51 @@ class LabelEntry(BaseModel):
     values: list[Any]
     motor_ids: list[int]
     active: list[bool]
+    codes: list[list[int]] = Field(default_factory=list)
+    """One codeword per label. Empty means one-hot, which is retained so the two are comparable."""
+    bit_motors: list[int] = Field(default_factory=list)
+    """The `[on, off]` motor pairs, flattened. Length is twice the code width."""
+
+    @property
+    def isCoded(self) -> bool:
+        """Returns whether this decoder answers by codeword rather than by one motor per label."""
+        return bool(self.codes)
+
+    @property
+    def width(self) -> int:
+        """Returns how many bits a codeword holds, or zero in one-hot mode."""
+        return len(self.codes[0]) if self.codes else 0
 
     @model_validator(mode="after")
     def ensureLabelsAligned(self) -> "LabelEntry":
-        """Rejects a label table whose parallel lists disagree in length or repeat a motor."""
-        if not (len(self.values) == len(self.motor_ids) == len(self.active)):
+        """Rejects a label table whose parallel lists disagree or whose motors collide."""
+        if len(self.values) != len(self.active):
+            raise ValueError("values and active must be the same length")
+
+        if self.isCoded:
+            if self.motor_ids:
+                raise ValueError(
+                    "a coded decoder binds no motor to a label; its motors are bit pairs"
+                )
+            if len(self.codes) != len(self.values):
+                raise ValueError("codes and values must be the same length")
+            widths = {len(code) for code in self.codes}
+            if len(widths) != 1:
+                raise ValueError("every codeword must be the same width")
+            if len(self.bit_motors) != 2 * self.width:
+                raise ValueError(
+                    f"a {self.width}-bit codebook needs {2 * self.width} motors, "
+                    f"got {len(self.bit_motors)}"
+                )
+            if len(set(self.bit_motors)) != len(self.bit_motors):
+                raise ValueError("a motor appears in more than one bit pair")
+            if len({tuple(code) for code in self.codes}) != len(self.codes):
+                raise ValueError(
+                    "two labels share a codeword, so they could never be told apart"
+                )
+            return self
+
+        if len(self.values) != len(self.motor_ids):
             raise ValueError("values, motor_ids, and active must be the same length")
         if len(set(self.motor_ids)) != len(self.motor_ids):
             raise ValueError("a motor is bound to more than one label")

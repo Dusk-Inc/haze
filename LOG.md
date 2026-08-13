@@ -361,3 +361,46 @@ change to the decoder contract, so it is recorded rather than taken.
 
 This is the binding constraint on the multi-modal goal, where label spaces are large by nature, and
 it outranks both the majority readout gap and growth as the thing to resolve next.
+
+## The codebook decoder: built, measured, and does not work
+
+The label cliff — two labels 0.94-0.98, three or more barely above chance, nine below it — was the
+binding constraint on everything multi-modal, so the proposed fix was to stop giving each label a
+motor and give it a **codeword** instead: motors in pairs, one pair per bit, each pair a two-way
+race in the regime the rule handles exactly.
+
+It is built and tested (`CodeBook`, `src/functions/codebook.py`, 23 tests) and it loses to one-hot
+at every label count above two. Full numbers in `specs/decoding.md`.
+
+**The reason is multiplicative and I did not see it coming.** A codeword is a conjunction: the
+answer is right only when every bit is right, so joint accuracy is the *product* of per-bit
+accuracies. Nine labels over eight bits needs each bit right 0.92 of the time before the whole
+answer beats simply always naming the majority label. One-hot faces no such threshold, because one
+motor winning is a common event and it collects reward from the first observation. The reduction
+does not divide the problem, it conjoins it.
+
+The `0.00` cells are that effect at its sharpest: the majority label's thermometer codeword is all
+zeros, so producing it requires `m` independent pair-races to all land the same way — about `2^-m`
+by chance. The most frequent answer became the least reachable one.
+
+**What was ruled out.** Three exploration strategies (whole codeword, one random bit, per-bit
+independent) at two rates; two code families; and per-bit supervision, which replaces the shared
+scalar with each pair's own target bit and is the most information a teacher could supply. That
+last one is the informative negative: at 0.30 for nine labels it lifts the floor without clearing
+the bar, which says the barrier is **not** credit assignment and **not** the teaching signal. It is
+that per-bit accuracy is too low for the product to survive.
+
+**A process note.** I changed the exploration strategy from single-bit to whole-codeword on the
+strength of one cell of one row — the k=2 random-code result — before ever measuring k≥3 with the
+original. The change turned out to be right on its own merits (with a redundant code a single
+flipped bit still decodes to the same label, so bit-level exploration cannot change the answer at
+all, 0.27 against 0.91) but I did not know that when I made it. Measuring both properly afterwards
+is what turned a guess into a result.
+
+**What is left untried:** a code with real Hamming distance whose bits are also individually easy,
+so residual errors are corrected rather than multiplied. Thermometer gives easy bits and distance 1;
+random codes give distance and harder bits; nothing here gives both. That, or raise per-bit
+accuracy — which is the same work as the majority readout gap.
+
+`CodeBook` ships available and non-default, and one-hot stays the default, so the two remain
+comparable and this result can be re-tested against a better rule rather than re-derived.

@@ -5,7 +5,13 @@ from typing import Any
 import torch
 from torch import Tensor
 
-from ...errors import SignalDidNotReachMotorsError
+from ...errors import LabelSpaceError, SignalDidNotReachMotorsError
+from ...functions.codebook import (
+    calcBitMargins,
+    findNearestCode,
+    makeCodebook,
+    toCodeBits,
+)
 from ...functions.learning import calcConfidenceEntropy
 from ...models import LabelEntry
 
@@ -64,6 +70,95 @@ class ArgMax(Decoder):
         """Returns the active label holding the largest activation."""
         self.ensureSignalReached(states)
         return self.findActiveValues(entry)[int(torch.argmax(states))]
+
+
+class CodeBook(Decoder):
+    """Answers by reading several binary decisions and resolving them to the nearest label.
+
+    Exists because the one-motor-per-label contract asks the reward a question it cannot answer.
+    Told only that its answer was wrong, learning has no way to know which of `k - 1` rivals
+    should have won, so the corrective signal is divided among them and the fraction reaching the
+    right one falls as `1/k`. Measured, that puts a two-label decision at 0.94-0.98 and a
+    nine-label one below chance, and a *larger* mesh makes it worse.
+
+    Here every decision is between two motors, which is the regime the rule handles exactly:
+    "not the one I chose" names the other one and nothing is diluted. A label costs `O(log k)`
+    motors instead of one, so a vocabulary is a few dozen motors rather than thousands.
+
+    The codebook is the load-bearing choice and not an implementation detail, because it decides
+    what each bit *asks*. See specs/decoding.md.
+    """
+
+    def __init__(
+        self,
+        labels: list[Any] | None = None,
+        width: int | None = None,
+        ordinal: bool | None = None,
+        code_seed: int = 0,
+    ) -> None:
+        """Records the labels, the code width, and whether the label set has an order."""
+        super().__init__(labels)
+        self.width = width
+        self.ordinal = ordinal
+        self.code_seed = code_seed
+
+    def toPortParams(self) -> dict[str, Any]:
+        """Returns the constructor arguments needed to rebuild this decoder."""
+        return {
+            "labels": list(self.labels),
+            "width": self.width,
+            "ordinal": self.ordinal,
+            "code_seed": self.code_seed,
+        }
+
+    def ensureOrdinal(self, count: int) -> bool:
+        """Returns whether to treat the label set as a scale rather than as unordered names.
+
+        Inferred from the labels themselves when not stated: consecutive integers from zero are a
+        scale, and a scale gets a thermometer code whose every bit is a threshold. Guessing wrong
+        in the unordered direction only costs bits; guessing wrong the other way would hand the
+        mesh bits it cannot learn.
+        """
+        if self.ordinal is not None:
+            return self.ordinal
+        values = self.labels[:count]
+        return all(isinstance(v, int) and not isinstance(v, bool) for v in values) and (
+            sorted(values) == list(range(len(values)))
+        )
+
+    def calcCodebook(self, count: int) -> list[list[int]]:
+        """Returns the codeword for each of `count` labels.
+
+        Deterministic in `code_seed` and generated from its own generator rather than the mesh's,
+        so building a codebook never perturbs the wiring or the exploration stream.
+        """
+        generator = torch.Generator().manual_seed(self.code_seed)
+        return makeCodebook(count, self.width, generator, self.ensureOrdinal(count))
+
+    def decodeMotors(self, states: Tensor, entry: LabelEntry) -> Any:
+        """Returns the active label whose codeword is nearest to what the motor pairs voted."""
+        self.ensureSignalReached(states)
+        bits = toCodeBits(states)
+        allowed = [i for i, on in enumerate(entry.active) if on]
+        if not allowed:
+            raise LabelSpaceError(f"decoder {self.key!r} has no active labels to decode to")
+        codes = [entry.codes[i] for i in allowed]
+        return entry.values[allowed[findNearestCode(bits, codes)]]
+
+    def calcMotorConfidence(self, states: Tensor, entry: LabelEntry) -> float:
+        """Returns how decisively the pairs voted, governed by the least decisive of them.
+
+        The weakest bit rather than the average, because a codeword is only as settled as its
+        least settled bit: one undecided pair is one flipped bit, and a flipped bit is a different
+        answer wherever the code has no spare distance to absorb it.
+        """
+        margins = calcBitMargins(states)
+        if margins.numel() == 0:
+            return 0.0
+        scale = float(states.abs().max())
+        if scale <= 0:
+            return 0.0
+        return float(margins.min() / scale)
 
 
 class SoftMax(Decoder):

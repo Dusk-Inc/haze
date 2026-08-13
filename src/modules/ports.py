@@ -138,6 +138,9 @@ class PortRegistry:
             self.labels[key] = entry
             self._label_index[key] = {}
 
+        if self.isCodedDecoder(key):
+            return self.setCodedLabels(key, values, keys)
+
         index = self._label_index[key]
         unseen = [v for v, k in zip(values, keys) if k not in index]
         if unseen and calcLabelType(unseen) != entry.value_type:
@@ -164,6 +167,69 @@ class PortRegistry:
         flags = torch.tensor(entry.active, dtype=torch.bool)
         self.mesh.active[motor_ids] = flags
         return entry
+
+    def isCodedDecoder(self, key: str) -> bool:
+        """Returns whether this decoder answers by codeword rather than one motor per label."""
+        return hasattr(self.impls.get(key), "calcCodebook")
+
+    def setCodedLabels(self, key: str, values: list[Any], keys: list[str]) -> LabelEntry:
+        """Binds a label set to codewords, allocating one motor pair per bit.
+
+        The codebook is generated once, at the first binding, and then travels in the checkpoint.
+        A label's identity is its codeword exactly as it was its motor index before: regenerating
+        the book under a grown label set would silently reassign every label the mesh had already
+        learned about, so a later call may only extend it. See specs/decoding.md.
+        """
+        spec = self.findPortSpec(key)
+        entry = self.labels[key]
+        index = self._label_index[key]
+
+        unseen = [v for v, k in zip(values, keys) if k not in index]
+        if unseen and calcLabelType(unseen) != entry.value_type:
+            raise LabelSpaceError(
+                f"decoder {key!r} holds {entry.value_type} labels but was given "
+                f"{calcLabelType(unseen)}; a mixed table cannot round-trip through JSON"
+            )
+
+        if unseen:
+            grown = list(entry.values) + unseen
+            codes = self.impls[key].calcCodebook(len(grown))
+            if entry.codes and codes[: len(entry.values)] != entry.codes:
+                raise LabelSpaceError(
+                    f"decoder {key!r} would reassign the codewords of labels it already holds; "
+                    "a label's identity is its codeword, so everything learned about it would "
+                    "silently transfer to a different answer"
+                )
+            if not entry.bit_motors:
+                pairs = self.mesh.allocNeuronIds(
+                    2 * len(codes[0]), NeuronKind.MOTOR, owner=spec.slot
+                )
+                self.mesh.connectMotors(pairs)
+                self.mesh.ensureNoOrphans()
+                entry.bit_motors = [int(m) for m in pairs.tolist()]
+            elif len(codes[0]) != entry.width:
+                raise LabelSpaceError(
+                    f"decoder {key!r} grew from a {entry.width}-bit codebook to "
+                    f"{len(codes[0])} bits; widening after motors are bound is not supported"
+                )
+            for value in unseen:
+                index[toLabelKey(value)] = len(entry.values)
+                entry.values.append(value)
+                entry.active.append(False)
+            entry.codes = codes
+
+        wanted = set(keys)
+        for position, value in enumerate(entry.values):
+            entry.active[position] = toLabelKey(value) in wanted
+
+        entry.model_validate(entry.model_dump())
+        motors = torch.tensor(entry.bit_motors, dtype=torch.int64)
+        self.mesh.active[motors] = True
+        return entry
+
+    def findBitMotorIds(self, key: str) -> Tensor:
+        """Returns a coded decoder's motor pairs, flattened as `[on, off, on, off, ...]`."""
+        return torch.tensor(self.findLabels(key).bit_motors, dtype=torch.int64)
 
     def findLabels(self, key: str) -> LabelEntry:
         """Returns a decoder's label table, or raises if it has none yet."""

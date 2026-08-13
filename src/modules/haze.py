@@ -14,13 +14,16 @@ from ..errors import (
     PortNotFoundError,
     SignalDidNotReachMotorsError,
 )
+from ..functions.codebook import toCodeBits
 from ..functions.learning import (
     applyCreditedLearning,
     applyLearning,
+    calcCodeSeeds,
     calcMotorSeeds,
     calcNeuronCredit,
     calcRecoveryMask,
     calcRewardAdvantage,
+    switchCodeChoice,
     switchMotorChoice,
 )
 from ..functions.propagate import flowSignalPass
@@ -61,7 +64,7 @@ class Haze(nn.Module, PyTorchModelHubMixin):
         self.ports = PortRegistry(self.mesh)
         self.learning_enabled = True
         self._observations: dict[str, Any] = {}
-        self._chosen: dict[str, int] = {}
+        self._chosen: dict[str, list[int]] = {}
 
         if config.counts.nexus == 0 and config.counts.terminus == 0:
             self.mesh.buildMesh(config.nexus_size, config.terminus_size)
@@ -153,12 +156,21 @@ class Haze(nn.Module, PyTorchModelHubMixin):
         for key in self.ports.findPortKeys(PortRole.DECODER):
             decoder = self.ports.impls[key]
             entry = self.ports.findLabels(key)
-            motors = self.ports.findActiveMotorIds(key)
-            states = switchMotorChoice(activation[motors], rate, self.mesh.generator)
-            answer = decoder.decodeMotors(states, entry)
-            output.predictions[key] = [answer]
+
+            if entry.isCoded:
+                motors = self.ports.findBitMotorIds(key)
+                allowed = [c for c, on in zip(entry.codes, entry.active) if on]
+                states = switchCodeChoice(
+                    activation[motors], allowed, rate, self.mesh.generator
+                )
+                self._chosen[key] = toCodeBits(states).tolist()
+            else:
+                motors = self.ports.findActiveMotorIds(key)
+                states = switchMotorChoice(activation[motors], rate, self.mesh.generator)
+                self._chosen[key] = [int(motors[int(torch.argmax(states))])]
+
+            output.predictions[key] = [decoder.decodeMotors(states, entry)]
             output.confidence[key] = decoder.calcMotorConfidence(states, entry)
-            self._chosen[key] = int(motors[int(torch.argmax(states))])
         return output
 
     def learn(self, reward: float, reverse: bool = False) -> LearnResult:
@@ -200,8 +212,15 @@ class Haze(nn.Module, PyTorchModelHubMixin):
         gain = calcRewardAdvantage(self.mesh, reward, self.config.hyper)
         seeds: dict[int, float] = {}
         for key, chosen in self._chosen.items():
-            motors = self.ports.findActiveMotorIds(key)
-            for motor, value in calcMotorSeeds(motors, chosen, gain).items():
+            entry = self.ports.findLabels(key)
+            if entry.isCoded:
+                picked = calcCodeSeeds(
+                    entry.bit_motors, torch.tensor(chosen, dtype=torch.int16), gain
+                )
+            else:
+                motors = self.ports.findActiveMotorIds(key)
+                picked = calcMotorSeeds(motors, chosen[0], gain)
+            for motor, value in picked.items():
                 seeds[motor] = seeds.get(motor, 0.0) + value
 
         for state in self._observations.values():
@@ -228,7 +247,11 @@ class Haze(nn.Module, PyTorchModelHubMixin):
             entry = self.ports.labels.get(key)
             if entry is None:
                 continue
-            motors = self.ports.findActiveMotorIds(key)
+            motors = (
+                self.ports.findBitMotorIds(key)
+                if entry.isCoded
+                else self.ports.findActiveMotorIds(key)
+            )
             scores.append(self.ports.impls[key].calcMotorConfidence(activation[motors], entry))
         return sum(scores) / len(scores) if scores else 0.0
 

@@ -260,6 +260,60 @@ def calcMotorSeeds(motors: Tensor, chosen: int, gain: float) -> dict[int, float]
     return {motor: (gain if motor == chosen else -share) for motor in ids}
 
 
+def calcCodeSeeds(bit_motors: list[int], bits: Tensor, gain: float) -> dict[int, float]:
+    """Returns the teaching signal for each motor of a coded decoder, given the bits it voted.
+
+    Every pair is scored on its own, and inside a pair the seeds are exactly the two-label rule:
+    the motor that won gets the gain and the one that lost gets its negative. Nothing is divided
+    among rivals, because within a pair there is only one rival and "not the one I chose" names
+    it precisely — which is the whole reason a codebook restores the signal a large label set
+    destroys. See specs/decoding.md.
+
+    The pairs that were wrong and the pairs that were right receive the same signed gain, since a
+    scalar reward cannot say which bits were at fault. That is noise rather than bias: a bit whose
+    vote genuinely tracks the outcome accumulates a net push in the right direction, while the
+    others average out. It is what a one-hot decoder cannot do, where the dilution is systematic.
+    """
+    seeds: dict[int, float] = {}
+    for position, bit in enumerate(bits.tolist()):
+        on, off = bit_motors[2 * position], bit_motors[2 * position + 1]
+        winner, loser = (on, off) if bit else (off, on)
+        seeds[winner] = seeds.get(winner, 0.0) + gain
+        seeds[loser] = seeds.get(loser, 0.0) - gain
+    return seeds
+
+
+def switchCodeChoice(
+    states: Tensor, codes: list[list[int]], rate: float, generator: torch.Generator
+) -> Tensor:
+    """Returns the pair activations rearranged to spell a random label, at the explore rate.
+
+    Explores in label space rather than bit space, which is not the obvious choice and is the one
+    that works. Flipping a single random bit reads as the natural local move, but a code with
+    spare distance is built precisely so that one wrong bit still decodes to the same label — so
+    at a Hamming distance of 4, single-bit exploration cannot change the answer at all. Measured,
+    that reinstated the exact dead zone exploration exists to prevent: the mesh locked onto one
+    label, could never try another, and scored 0.27 against 0.91 on a task it should have found
+    easy. Redundancy defeats bit-level exploration in proportion to how much of it there is.
+
+    Landing on a whole codeword also keeps the credit honest, since every pair is then scored on a
+    label the mesh could actually have answered. Each pair is swapped rather than overwritten, so
+    the activation multiset survives and confidence is not invented. See specs/decoding.md.
+    """
+    if rate <= 0.0 or states.numel() < 2 or len(codes) < 2:
+        return states
+    if float(torch.rand(1, generator=generator)) >= rate:
+        return states
+
+    target = codes[int(torch.randint(0, len(codes), (1,), generator=generator))]
+    switched = states.clone()
+    for position, bit in enumerate(target):
+        on, off = 2 * position, 2 * position + 1
+        if (float(states[on]) > float(states[off])) != bool(bit):
+            switched[on], switched[off] = states[off], states[on]
+    return switched
+
+
 def applyCreditedLearning(
     mesh,
     trace: Tensor,
