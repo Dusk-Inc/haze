@@ -146,9 +146,14 @@ def flowSignalPass(
     inputs: Tensor,
     sensor_ids: Tensor,
     hyper: HazeHyper,
-    lanes_per_feature: bool = True,
 ) -> SignalState:
     """Runs a full propagation and returns its final state.
+
+    Every feature of an observation enters the same lane, so an interneuron sees the whole
+    observation at once and conjunctive structure can form. Propagating each feature in its own
+    lane instead confines the mesh to a sum over features: measured, that collapses the terminus
+    representation to a rank of 8-11 out of 33 and puts a linear probe at chance, while one lane
+    per observation reaches full rank. See specs/propagation.md.
 
     Terminates when no edge passes its gate, which is guaranteed: the fired mask is monotone and
     bounded, so each hop either claims a new edge or ends the pass. That is what makes a mesh
@@ -158,14 +163,8 @@ def flowSignalPass(
     rows = int(inputs.shape[0]) if inputs.dim() > 1 else 1
     flat = inputs.reshape(rows, features)
 
-    lanes = rows * features if lanes_per_feature else rows
-    state = makeSignalState(lanes, int(mesh.kind.numel()), int(mesh.capacity.edges), mesh.dtype)
-
-    if lanes_per_feature:
-        lane_index = torch.arange(lanes)
-        state.val[lane_index, sensor_ids.repeat(rows)] = flat.reshape(-1).to(mesh.dtype)
-    else:
-        state.val[:, sensor_ids] = flat.to(mesh.dtype)
+    state = makeSignalState(rows, int(mesh.kind.numel()), int(mesh.capacity.edges), mesh.dtype)
+    state.val[:, sensor_ids] = flat.to(mesh.dtype)
 
     live = slice(0, mesh.counts.edges)
     src, dst = mesh.src[live], mesh.dst[live]
@@ -216,47 +215,49 @@ def flowSignalPassReference(
     flat = inputs.reshape(-1)[:features].tolist()
     motor_acc: dict[int, float] = {}
 
-    for feature, sensor in enumerate(sensor_ids.tolist()):
-        node = {sensor: (float(flat[feature]), 0.0, 0.0)}
-        claimed: set[int] = set()
+    node = {
+        sensor: (float(flat[feature]), 0.0, 0.0)
+        for feature, sensor in enumerate(sensor_ids.tolist())
+    }
+    claimed: set[int] = set()
 
-        for _ in range(hyper.max_steps):
-            arrivals: dict[int, list[tuple[float, float, float]]] = {}
-            any_fired = False
+    for _ in range(hyper.max_steps):
+        arrivals: dict[int, list[tuple[float, float, float]]] = {}
+        any_fired = False
 
-            for index, (source, target, weight) in enumerate(edges):
-                if index in claimed or source not in node:
-                    continue
-                if kinds[target] == int(NeuronKind.MOTOR) and not active[target]:
-                    continue
-                value, slog, plen = node[source]
-                value *= weight
-                slog += math.log(weight)
-                plen += 1.0
-                actual = value * math.exp(slog / max(plen, 1.0))
-                if actual <= hyper.signal_threshold:
-                    continue
-                claimed.add(index)
-                any_fired = True
-                carried = actual if kinds[target] == int(NeuronKind.MOTOR) else value
-                arrivals.setdefault(target, []).append((carried, slog, plen))
+        for index, (source, target, weight) in enumerate(edges):
+            if index in claimed or source not in node:
+                continue
+            if kinds[target] == int(NeuronKind.MOTOR) and not active[target]:
+                continue
+            value, slog, plen = node[source]
+            value *= weight
+            slog += math.log(weight)
+            plen += 1.0
+            actual = value * math.exp(slog / max(plen, 1.0))
+            if actual <= hyper.signal_threshold:
+                continue
+            claimed.add(index)
+            any_fired = True
+            carried = actual if kinds[target] == int(NeuronKind.MOTOR) else value
+            arrivals.setdefault(target, []).append((carried, slog, plen))
 
-            if not any_fired:
-                break
+        if not any_fired:
+            break
 
-            node = {}
-            for target, incoming in arrivals.items():
-                total = sum(c for c, _, _ in incoming)
-                if kinds[target] == int(NeuronKind.MOTOR):
-                    motor_acc[target] = motor_acc.get(target, 0.0) + total
-                    continue
-                if total < hyper.neuron_firing_threshold:
-                    continue
-                weight = max(total, 1e-12)
-                node[target] = (
-                    total,
-                    sum(c * s for c, s, _ in incoming) / weight,
-                    sum(c * p for c, _, p in incoming) / weight,
-                )
+        node = {}
+        for target, incoming in arrivals.items():
+            total = sum(c for c, _, _ in incoming)
+            if kinds[target] == int(NeuronKind.MOTOR):
+                motor_acc[target] = motor_acc.get(target, 0.0) + total
+                continue
+            if total < hyper.neuron_firing_threshold:
+                continue
+            weight = max(total, 1e-12)
+            node[target] = (
+                total,
+                sum(c * s for c, s, _ in incoming) / weight,
+                sum(c * p for c, _, p in incoming) / weight,
+            )
 
     return motor_acc

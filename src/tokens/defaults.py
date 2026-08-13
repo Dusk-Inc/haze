@@ -1,13 +1,24 @@
 """Default hyperparameters, capacities, and format identifiers."""
 
-SIGNAL_LOWER = 0.1
-"""Lower bound of the band every encoder must emit into. See specs/encoding.md."""
+SIGNAL_LOWER = 0.4
+"""Lower bound of the band every encoder must emit into.
+
+Not a free choice: a feature at the floor attenuates by roughly the square of an edge strength
+over one hop, so a floor below `SIGNAL_THRESHOLD / strength^2` cannot traverse a single edge.
+At the inherited floor of 0.1 the bottom third of the band was mute — a feature at its minimum
+fired nothing and was indistinguishable from not having been observed. HazeHyper refuses a
+combination where that is true. See specs/encoding.md.
+"""
 
 SIGNAL_UPPER = 0.9
 """Upper bound of the band every encoder must emit into. See specs/encoding.md."""
 
-SIGNAL_THRESHOLD = 0.3
-"""Edge gate: a signal below this after attenuation does not traverse the edge."""
+SIGNAL_THRESHOLD = 0.25
+"""Edge gate: a signal below this after attenuation does not traverse the edge.
+
+Kept below what the band's floor can reach, so the gate sparsifies on attenuated downstream
+signal rather than muting weak inputs at the sensors.
+"""
 
 NEURON_FIRING_THRESHOLD = 0.5
 """Neuron gate: accumulated arrivals below this are discarded rather than emitted.

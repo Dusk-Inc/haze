@@ -117,6 +117,29 @@ Note that the correction factor is the geometric mean of the traversed strengths
 README's original wording suggested; it applies a roughly constant haircut, with a weak preference
 for paths built from uniformly strong edges over paths of the same product built from mixed ones.
 
+### One observation is one lane
+
+**Given** an observation of several features
+**When** it is propagated
+**Then** every feature enters the same lane, so an interneuron accumulates across features and
+conjunctive structure can form.
+
+This is load-bearing, and it was the single most damaging thing carried over from the prior
+engine. That engine gave each feature its own propagation context because it ran one thread per
+feature, and reproducing that isolation faithfully confined the mesh to a **sum over independent
+features**: no interneuron ever saw two features at once, so parity was not merely hard but
+unrepresentable, and the terminus representation collapsed into a small subspace.
+
+Measured on the terminus activation, which is what the motors read:
+
+| lanes | rank of the terminus representation |
+|---|---|
+| one per feature | 8-11 of 33 |
+| one per observation | **32 of 32** |
+
+A rank far below the neuron count means different inputs are not being represented differently,
+and no readout can recover what was never encoded.
+
 ### Propagation is a synchronous wavefront
 
 **Given** several edges leaving the same neuron
@@ -144,7 +167,45 @@ every call and the effective gate was per-arriving-edge; the prior `0.5` is ther
 permissive. `signal_threshold` additionally absorbs the merge approximation above. Both are set by
 the sweep recorded below.
 
-> Sweep results and the chosen values are recorded here in Phase 3.
+The signal band and the edge gate are now reconciled with each other, and `HazeHyper` refuses a
+combination where they are not. A feature at the band's floor attenuates by roughly the square of
+an edge strength over one hop, so a floor below `signal_threshold / strength^2` cannot cross a
+single edge. At the inherited floor of 0.1 against a gate of 0.3 the bottom third of the band was
+**mute** — a feature at its minimum fired nothing and was indistinguishable from not having been
+observed, and an all-minimum observation produced no answer at all. The shipped band is
+`[0.4, 0.9]` against a gate of 0.25.
+
+`neuron_firing_threshold` remains at its inherited value pending the topology work below.
+
+## Measured ceiling
+
+The instrument is a probe **matched to the readout it bounds**: one weight per neuron and class,
+clamped to the same range the mesh clamps strengths to, no bias term, argmax across motors, and
+accuracy scored on data held out of the fit. An unconstrained least-squares probe answers a
+different and far more flattering question — it fits signed unbounded weights, carries a bias the
+mesh has no equivalent of, and scores on its own training data. It reported copy at 0.91 and
+majority at 0.98 where the matched probe reports 0.57 and 0.74. A ceiling that cannot be reached
+is worse than no ceiling, because work gets spent chasing it.
+
+With per-observation lanes and the reconciled band, over seeds 1-3 (chance 0.50):
+
+| task | matched bound | achieved | gap |
+|---|---|---|---|
+| constant | 1.00 | 0.33 | -0.67 |
+| copy | 0.57 | 0.50 | -0.07 |
+| majority | 0.74 | 0.60 | -0.14 |
+| parity | 0.51 | 0.49 | -0.01 |
+
+The reading is that **achieved reward now tracks the bound closely, and the bound itself is the
+limit**. The learning rule is extracting most of what the representation holds; the representation
+does not hold much. That points the next work at topology rather than at the rule.
+
+The exception is `constant`, which the probe puts at 1.00 and which the mesh reaches on only one
+seed in three. Edge activation sits at 77-87% of all edges, so both motors receive nearly identical
+totals, confidence collapses toward zero, and the learning gain — which is the gap between reward
+and confidence — collapses with it. Density is the cause, and the same density is why the bound is
+low: a mesh in which almost everything fires on almost every input has no room to represent one
+input differently from another.
 
 ## Performance crossover
 

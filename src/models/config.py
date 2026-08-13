@@ -50,6 +50,8 @@ class HazeHyper(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    signal_lower: float = Field(default=defaults.SIGNAL_LOWER, gt=0.0, lt=1.0)
+    signal_upper: float = Field(default=defaults.SIGNAL_UPPER, gt=0.0, le=1.0)
     signal_threshold: float = Field(default=defaults.SIGNAL_THRESHOLD, gt=0.0, lt=1.0)
     neuron_firing_threshold: float = Field(
         default=defaults.NEURON_FIRING_THRESHOLD, gt=0.0
@@ -98,6 +100,18 @@ class HazeHyper(BaseModel):
             )
         if self.fanout_min > self.fanout_max:
             raise ValueError("fanout_min must not exceed fanout_max")
+
+        reachable = self.signal_lower * self.strength_init_upper * self.strength_init_upper
+        if reachable <= self.signal_threshold:
+            raise ValueError(
+                f"a feature at the signal band's floor ({self.signal_lower}) attenuates to at "
+                f"most {reachable:.4f} across one edge, which never clears signal_threshold "
+                f"({self.signal_threshold}). The bottom of the band would be mute: a feature at "
+                "its minimum would fire no edge at all and be indistinguishable from not having "
+                "been observed. Raise signal_lower or lower signal_threshold."
+            )
+        if self.signal_lower >= self.signal_upper:
+            raise ValueError("signal_lower must be below signal_upper")
         return self
 
 

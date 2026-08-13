@@ -187,10 +187,7 @@ class Haze(nn.Module, PyTorchModelHubMixin):
                 seeds[motor] = seeds.get(motor, 0.0) + value
 
         for state in self._observations.values():
-            shares = torch.zeros(state.lanes, dtype=self.mesh.dtype)
-            for chosen in self._chosen.values():
-                shares = shares + state.calcLaneShare(chosen)
-            weight = state.toEdgeEligibility(shares)
+            weight = state.toEdgeEligibility()
             eligibility[: weight.numel()] += weight
 
         credit = calcNeuronCredit(self.mesh, trace, seeds, hops)
