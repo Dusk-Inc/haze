@@ -108,6 +108,7 @@ class PortRegistry:
         if shortfall > 0:
             fresh = self.mesh.allocNeuronIds(shortfall, NeuronKind.SENSOR, owner=spec.slot)
             self.mesh.connectSensors(fresh)
+            self.mesh.ensureNoOrphans()
             held = torch.cat([held, fresh])
             self.sensor_ids[key] = held
             spec.width = int(held.numel())
@@ -148,6 +149,7 @@ class PortRegistry:
         if unseen:
             motors = self.mesh.allocNeuronIds(len(unseen), NeuronKind.MOTOR, owner=spec.slot)
             self.mesh.connectMotors(motors)
+            self.mesh.ensureNoOrphans()
             for value, motor in zip(unseen, motors.tolist()):
                 index[toLabelKey(value)] = len(entry.values)
                 entry.values.append(value)

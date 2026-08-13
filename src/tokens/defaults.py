@@ -79,6 +79,24 @@ MIN_MOTOR_CAPACITY = 32
 MIN_EDGE_CAPACITY = 1024
 """Floor on the edge arrays, so early growth writes into slack rather than reallocating."""
 
+SENSOR_FANOUT = 48
+"""Nexus interneurons each sensor projects to.
+
+Sampling rather than full bipartite wiring is what could give a feature a pathway of its own, but
+it was measured and does not on its own raise what a readout can achieve: at a fan-out of 8 the
+probe bound moved from 0.57 to 0.58 on copy and from 0.74 to 0.69 on majority, while edge
+activation went bimodal — either a few percent, where signal never reaches the motors, or
+near-total, where it reaches all of them equally. The default is therefore set high enough to
+keep propagation stable, and left as a knob rather than a claim. See specs/growth.md.
+"""
+
+MOTOR_FANIN = 24
+"""Terminus interneurons each motor draws from, sampled separately per motor.
+
+Sampled per motor so different answers can read different evidence, which fully bipartite wiring
+makes impossible. Kept wide for the same stability reason as SENSOR_FANOUT.
+"""
+
 FANOUT_MIN = 2
 """Fewest outgoing edges a newly wired interneuron is given."""
 

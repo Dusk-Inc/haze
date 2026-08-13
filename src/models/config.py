@@ -70,6 +70,8 @@ class HazeHyper(BaseModel):
     relearn_limit: int = Field(default=defaults.RELEARN_LIMIT, ge=0)
     fanout_min: int = Field(default=defaults.FANOUT_MIN, ge=1)
     fanout_max: int = Field(default=defaults.FANOUT_MAX, ge=1)
+    sensor_fanout: int = Field(default=defaults.SENSOR_FANOUT, ge=1)
+    motor_fanin: int = Field(default=defaults.MOTOR_FANIN, ge=1)
     credit_assignment: bool = True
     """Whether an edge's update is weighted by its own contribution to the chosen answer.
 

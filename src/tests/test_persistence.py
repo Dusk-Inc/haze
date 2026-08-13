@@ -71,6 +71,7 @@ def test_fromPretrained_doesRoundTripAfterPruning(mesh_model: Haze, tmp_path: Pa
     keep = torch.zeros(mesh_model.mesh.capacity.edges, dtype=torch.bool)
     keep[: mesh_model.mesh.counts.edges : 3] = True
     mesh_model.mesh.compactEdges(keep)
+    mesh_model.mesh.ensureNoOrphans()
     mesh_model.mesh.ensureMeshConsistent()
 
     saveTrusted(mesh_model, tmp_path / "ckpt")

@@ -27,15 +27,47 @@ def test_buildMesh_doesWireBothMeshesAndOnlyInterneurons():
     model.mesh.ensureMeshConsistent()
 
 
-def test_connectSensors_doesReachEveryNexusInterneuron():
-    """Asserts a new sensor is wired into every nexus interneuron, per the wiring policy."""
-    model = makeHaze(nexus_size=8, terminus_size=4, seed=3)
+def test_connectSensors_doesSampleTheNexusRatherThanTakeAllOfIt():
+    """Asserts a sensor projects to a sample of the nexus, not to every interneuron.
+
+    Wiring every sensor to every interneuron makes each feature excite the same population in
+    the same way, leaving no feature-specific pathway for learning to strengthen.
+    """
+    model = makeHaze(nexus_size=48, terminus_size=8, seed=3)
+    fanout = model.config.hyper.sensor_fanout
     before = model.mesh.counts.edges
 
     sensors = model.mesh.allocNeuronIds(3, NeuronKind.SENSOR, owner=0)
     model.mesh.connectSensors(sensors)
+    added = model.mesh.counts.edges - before
 
-    assert model.mesh.counts.edges - before == 3 * 8
+    assert added <= 3 * fanout
+    assert added < 3 * 48, "sensors are still fully bipartite with the nexus"
+
+
+def test_connectMotors_doesGiveEachMotorItsOwnSampleOfTheTerminus():
+    """Asserts two motors read different terminus populations rather than the identical one.
+
+    Under fully bipartite wiring both motors see the same evidence and can differ only by edge
+    strength, which is most of why competing motors receive near-identical totals.
+    """
+    model = makeHaze(nexus_size=16, terminus_size=40, seed=3)
+    motors = model.mesh.allocNeuronIds(2, NeuronKind.MOTOR, owner=0)
+    model.mesh.connectMotors(motors)
+
+    live = slice(0, model.mesh.counts.edges)
+    feeding = {
+        int(m): {
+            int(s)
+            for s, d in zip(model.mesh.src[live].tolist(), model.mesh.dst[live].tolist())
+            if d == int(m)
+        }
+        for m in motors.tolist()
+    }
+    first, second = feeding[motors[0].item()], feeding[motors[1].item()]
+
+    assert first != second, "both motors draw the identical terminus population"
+    assert len(first) <= model.config.hyper.motor_fanin
 
 
 def test_connectMotors_doesRegisterEdgesAsLearnable():
@@ -87,6 +119,7 @@ def test_allocNeuronIds_doesNotRenumberLiveNeuronsOnRelayout():
     assert mesh.capacity.sensors >= 7
     assert mesh.findNeuronIds(NeuronKind.MOTOR).tolist() != motors_before, "motors should move"
     assert fingerprint() == before, "relayout changed what an edge means"
+    mesh.ensureNoOrphans()
     mesh.ensureMeshConsistent()
 
 
@@ -126,6 +159,8 @@ def test_compactEdges_doesPermuteEveryEdgeArrayTogether():
     }
     assert actual == expected
     assert bool((mesh.src[: mesh.counts.edges].diff() >= 0).all()), "not sorted by source"
+
+    mesh.ensureNoOrphans()
     mesh.ensureMeshConsistent()
 
 
@@ -210,10 +245,10 @@ def test_allocNeuronIds_doesReturnNothingForAnEmptyRequest():
 
 def test_connectNeurons_doesClampFanoutToTheCandidateCount():
     """Asserts wiring into a candidate set smaller than the fan-out does not loop forever."""
-    model = makeHaze(nexus_size=2, terminus_size=1, seed=1)
-    model.mesh.ensureMeshConsistent()
+    model = makeHaze(nexus_size=3, terminus_size=2, seed=1)
 
     assert model.mesh.counts.edges > 0
+    model.mesh.ensureMeshConsistent()
 
 
 def test_buildMesh_doesAcceptAnEmptyMesh():
@@ -289,4 +324,6 @@ def test_compactEdges_doesSurviveDroppingEverything():
     assert removed > 0
     assert mesh.counts.edges == 0
     assert not bool(mesh.alive_e.any())
+
+    assert mesh.ensureNoOrphans() > 0
     mesh.ensureMeshConsistent()

@@ -278,18 +278,117 @@ class MeshState(nn.Module):
         self.connectNeurons(nexus, nexus)
         self.connectNeurons(terminus, terminus)
         self.connectNeurons(nexus, terminus)
+        self.ensureNoOrphans()
 
     def connectSensors(self, sensors: Tensor) -> Tensor:
-        """Wires new sensors into every nexus interneuron."""
-        return self.connectAll(sensors, self.findNeuronIds(NeuronKind.NEXUS))
+        """Wires each new sensor into a sample of the nexus rather than all of it.
+
+        Wiring every sensor to every interneuron makes each feature excite the same population in
+        the same way, so there is no feature-specific pathway for learning to strengthen
+        differentially. Sampling is what gives a feature somewhere of its own to act on. See
+        specs/growth.md.
+        """
+        nexus = self.findNeuronIds(NeuronKind.NEXUS)
+        fan = torch.full(
+            (sensors.numel(),), self.config.hyper.sensor_fanout, dtype=torch.int64
+        )
+        return self.connectNeurons(sensors, nexus, fan)
 
     def connectMotors(self, motors: Tensor) -> Tensor:
-        """Wires every terminus interneuron into new motors.
+        """Wires each new motor from its own sample of the terminus.
+
+        Each motor draws separately, so different answers read different evidence. Under fully
+        bipartite wiring both motors see the identical terminus population and can differ only by
+        edge strength, which is most of why they end up receiving near-identical totals.
 
         These edges are registered like any other. The prior engine created them outside its
         registry, leaving them pinned at a hardcoded strength and invisible to learning.
         """
-        return self.connectAll(self.findNeuronIds(NeuronKind.TERMINUS), motors)
+        terminus = self.findNeuronIds(NeuronKind.TERMINUS)
+        if motors.numel() == 0 or terminus.numel() == 0:
+            return torch.empty(0, dtype=torch.int64)
+
+        width = min(self.config.hyper.motor_fanin, int(terminus.numel()))
+        sources, targets = [], []
+        for motor in motors.tolist():
+            picked = terminus[
+                torch.randperm(terminus.numel(), generator=self.generator)[:width]
+            ]
+            sources.append(picked)
+            targets.append(torch.full((picked.numel(),), motor, dtype=torch.int64))
+
+        src, dst = torch.cat(sources), torch.cat(targets)
+        src, dst = dedupeEdges(src, dst, self.findEdgeKeys(), self.capacity.neurons)
+        return self.addMeshEdges(src, dst)
+
+    def findOrphans(self) -> dict[str, Tensor]:
+        """Returns the live neurons that can no longer carry signal, grouped by why.
+
+        A sensor with no way out or a motor with no way in is a break in the model's interface,
+        not merely a weak spot: the feature or the label it stands for becomes unobservable. An
+        interneuron cut off in either direction has lost its learned role but not its capacity to
+        take a new one. See specs/pruning.md.
+        """
+        live = slice(0, self.counts.edges)
+        has_out = torch.zeros(self.capacity.neurons, dtype=torch.bool)
+        has_in = torch.zeros(self.capacity.neurons, dtype=torch.bool)
+        if self.counts.edges:
+            has_out[self.src[live]] = True
+            has_in[self.dst[live]] = True
+
+        sensors = self.findNeuronIds(NeuronKind.SENSOR)
+        motors = self.findNeuronIds(NeuronKind.MOTOR)
+        nexus = self.findNeuronIds(NeuronKind.NEXUS)
+        terminus = self.findNeuronIds(NeuronKind.TERMINUS)
+
+        return {
+            "sensors": sensors[~has_out[sensors]],
+            "motors": motors[~has_in[motors]],
+            "nexus": nexus[~has_out[nexus] | ~has_in[nexus]],
+            "terminus": terminus[~has_out[terminus] | ~has_in[terminus]],
+        }
+
+    def ensureNoOrphans(self) -> int:
+        """Rewires every neuron that has been cut off, and returns how many were rescued.
+
+        Pruning is allowed to disconnect a neuron; it is not allowed to leave it disconnected.
+        Fresh edges are drawn at fresh strengths from the initial range, so a rescued neuron
+        re-enters the mesh able to compete rather than arriving already weak.
+        """
+        rescued = 0
+        for _ in range(6):
+            orphans = self.findOrphans()
+            stranded = sum(int(ids.numel()) for ids in orphans.values())
+            if stranded == 0:
+                break
+            rescued += stranded
+
+            nexus = self.findNeuronIds(NeuronKind.NEXUS)
+            terminus = self.findNeuronIds(NeuronKind.TERMINUS)
+            sensors = self.findNeuronIds(NeuronKind.SENSOR)
+            motors = self.findNeuronIds(NeuronKind.MOTOR)
+
+            if int(orphans["sensors"].numel()) and nexus.numel():
+                self.connectSensors(orphans["sensors"])
+            if int(orphans["motors"].numel()) and terminus.numel():
+                self.connectMotors(orphans["motors"])
+
+            if int(orphans["nexus"].numel()):
+                self.connectNeurons(orphans["nexus"], nexus)
+                if terminus.numel():
+                    self.connectNeurons(orphans["nexus"], terminus)
+                self.connectNeurons(nexus, orphans["nexus"])
+                if sensors.numel():
+                    self.connectNeurons(sensors, orphans["nexus"])
+
+            if int(orphans["terminus"].numel()):
+                self.connectNeurons(orphans["terminus"], terminus)
+                if motors.numel():
+                    self.connectMotors(motors)
+                if nexus.numel():
+                    self.connectNeurons(nexus, orphans["terminus"])
+                self.connectNeurons(terminus, orphans["terminus"])
+        return rescued
 
 
     def compactEdges(self, keep: Tensor) -> int:
@@ -344,6 +443,13 @@ class MeshState(nn.Module):
             free = set(self.free_slots[kind])
             if free & set(live_ids.tolist()):
                 raise LabelSpaceError(f"a {kind.name.lower()} slot is both free and live")
+        stranded = {k: int(v.numel()) for k, v in self.findOrphans().items() if v.numel()}
+        if stranded:
+            raise LabelSpaceError(
+                f"the mesh holds neurons that cannot carry signal: {stranded}. A sensor with no "
+                "way out or a motor with no way in makes the feature or label it stands for "
+                "unobservable; call ensureNoOrphans after pruning."
+            )
 
     def toCounts(self) -> MeshCounts:
         """Returns a snapshot of live occupancy, for writing into a checkpoint config."""

@@ -187,25 +187,46 @@ mesh has no equivalent of, and scores on its own training data. It reported copy
 majority at 0.98 where the matched probe reports 0.57 and 0.74. A ceiling that cannot be reached
 is worse than no ceiling, because work gets spent chasing it.
 
-With per-observation lanes and the reconciled band, over seeds 1-3 (chance 0.50):
+The instrument had one further defect, found and fixed after its first use: it read `val`, which
+holds only the current frontier and is empty once a pass has finished, so it was measuring
+whatever happened to be in flight on the last hop. Terminus activity is now accumulated across the
+whole propagation, the way motor activity already was. **The numbers below supersede an earlier
+reading taken through the broken probe, and they reverse its conclusion.**
+
+Over seeds 1-3, chance 0.50, with per-observation lanes, the reconciled band, and orphan rescue:
 
 | task | matched bound | achieved | gap |
 |---|---|---|---|
-| constant | 1.00 | 0.33 | -0.67 |
-| copy | 0.57 | 0.50 | -0.07 |
-| majority | 0.74 | 0.60 | -0.14 |
-| parity | 0.51 | 0.49 | -0.01 |
+| constant | 1.00 | **1.00** | 0.00 |
+| copy | 0.72 | 0.47 | -0.25 |
+| majority | 0.79 | 0.27 | -0.52 |
+| parity | 0.48 | 0.43 | -0.05 |
 
-The reading is that **achieved reward now tracks the bound closely, and the bound itself is the
-limit**. The learning rule is extracting most of what the representation holds; the representation
-does not hold much. That points the next work at topology rather than at the rule.
+The terminus representation is full rank on every seed. The reading:
 
-The exception is `constant`, which the probe puts at 1.00 and which the mesh reaches on only one
-seed in three. Edge activation sits at 77-87% of all edges, so both motors receive nearly identical
-totals, confidence collapses toward zero, and the learning gain — which is the gap between reward
-and confidence — collapses with it. Density is the cause, and the same density is why the bound is
-low: a mesh in which almost everything fires on almost every input has no room to represent one
-input differently from another.
+- **constant is solved.** It sat at one seed in three before the band and lane changes.
+- **copy and majority are readout-limited, not representation-limited.** The representation
+  supports 0.72 and 0.79; learning extracts 0.47 and 0.27. That is a large gap and it is where the
+  remaining work is.
+- **parity is representation-limited.** Achieved sits within 0.05 of a bound that is barely above
+  chance, so no amount of better learning would help; it needs the mesh to form a conjunction it
+  currently does not.
+
+## Sparsity, measured twice
+
+Wiring each sensor to a sample of the nexus rather than to all of it, and giving each motor its own
+sample of the terminus, is the obvious way to give a feature somewhere of its own to act on. It was
+measured before and after the representation fix and **did not raise the bound either time**: at a
+sensor fan-out of 8 the bound moved from 0.57 to 0.58 on copy and from 0.74 to 0.69 on majority,
+while edge activation went bimodal — either a few percent, where signal never reaches the motors
+and the model has no answer at all, or near-total, where it reaches all of them equally.
+
+The bimodality is the signature of a hard threshold with positive feedback: learning raises
+strengths, more edges pass, more accumulates, more pass. There is no stable middle.
+
+Fan-out is therefore a configured knob with a wide default rather than a claim, and the orphan
+rescue built alongside it is kept on its own merits — pruning is allowed to disconnect a neuron,
+and something has to reconnect it.
 
 ## Performance crossover
 

@@ -23,6 +23,7 @@ class SignalState:
     plen: Tensor
     fired: Tensor
     motor_acc: Tensor
+    node_acc: Tensor
     eligibility: Tensor
     hops: int = 0
     reached: bool = False
@@ -32,6 +33,15 @@ class SignalState:
     def lanes(self) -> int:
         """Returns how many independent signal streams this state carries."""
         return int(self.val.shape[0])
+
+    def toNodeActivation(self) -> Tensor:
+        """Returns how much signal each neuron accumulated across the whole propagation.
+
+        Not the same as `val`, which holds only the current frontier and is empty once the pass
+        has finished. A probe reading `val` at the end measures whatever happened to be in flight
+        on the last hop, which is usually nothing.
+        """
+        return self.node_acc.sum(0)
 
     def toEdgeEligibility(self, lane_weights: Tensor | None = None) -> Tensor:
         """Returns how much signal each edge carried, weighted by how much its lane mattered.
@@ -70,6 +80,7 @@ def makeSignalState(lanes: int, neurons: int, edges: int, dtype: torch.dtype) ->
         plen=torch.zeros(lanes, neurons, dtype=dtype),
         fired=torch.zeros(lanes, edges, dtype=torch.bool),
         motor_acc=torch.zeros(lanes, neurons, dtype=dtype),
+        node_acc=torch.zeros(lanes, neurons, dtype=dtype),
         eligibility=torch.zeros(lanes, edges, dtype=dtype),
     )
 
@@ -129,6 +140,7 @@ def flowSignalStep(
 
     state.eligibility[:, : contrib.shape[1]] += contrib
 
+    state.node_acc = state.node_acc + arrived
     state.motor_acc = state.motor_acc + torch.where(
         is_motor.unsqueeze(0), arrived, torch.zeros_like(arrived)
     )
