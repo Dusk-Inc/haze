@@ -80,6 +80,41 @@ mask-independent. One inexactness remains at large B: sequential updates clamp a
 while the batched form clamps once, so edges whose trajectory would have hit a rail mid-batch
 differ. Keep B modest.
 
+## Known limitation: the rule performs no credit assignment
+
+The rule above moves **every edge in the trace by the same scalar**. When two motors compete for
+one answer, both of their inbound edges are in the trace, and both receive the same delta with the
+same sign. Nothing in the rule distinguishes the motor that should have won from the motor that
+did. Whichever motor happens to lead at initialization keeps leading, and the mesh's answer is
+effectively fixed by its random wiring.
+
+Measured, on the constant task — always answer the same label, chance 0.5, ceiling 1.0, the floor
+any working learner must reach:
+
+| `epsilon_start` | reward over the last 50 of 200 rows, seeds 1/2/3 | strength spread |
+|---|---|---|
+| 0.7 (inherited default) | 0.00, 0.00, 0.00 | saturated at the ceiling |
+| 0.05 | 0.00, 0.00, 0.00 | unsaturated |
+| 0.005 | 0.00, 0.06, 0.00 | unsaturated |
+
+Two distinct effects were separated here:
+
+1. **Saturation.** At the inherited `epsilon_start = 0.7`, one observation can move an edge ±0.7 on
+   a [0.1, 0.9] range — rail to rail in a single step. Within a handful of observations every
+   fired edge sits at the ceiling, both motors receive **numerically identical** activation,
+   confidence falls to exactly zero, and therefore the delta falls to exactly zero. The mesh stops
+   changing at all. This is a calibration fault and a smaller rate avoids it.
+2. **No credit assignment.** With the rate reduced far enough that strengths stay spread, the
+   reward *still* does not move off chance. This is not calibration. A uniform delta over the
+   fired set cannot create the asymmetry that choosing between labels requires.
+
+The second effect is architectural, and it is inherited rather than introduced: the prior engine
+applied the same rule to the same mask, and its measured baseline is likewise flat at chance (see
+LOG.md). Relieving it means changing the rule — weighting each edge's update by its own
+contribution to the chosen answer versus the correct one — which is a change to what Haze *is*,
+not to how fast it runs, and is therefore held for an explicit decision rather than folded into
+this rewrite.
+
 ### Updates use full-tensor selection, never boolean indexing
 
 **Given** a learning step

@@ -103,6 +103,39 @@ approximately `Var_w(g)/2` by Jensen — bounded at ≤8% for realistic strength
 tightens the edge gate rather than loosening it, and is absorbed by recalibrating
 `signal_threshold`.
 
+### What the rewrite revealed: the learning rule does not do credit assignment
+
+The tensor engine is verified correct — it agrees with a plain-Python reference implementation to
+float32 precision across every seed tested, propagation terminates on the cyclic nexus mesh, and
+step time is now **flat** where the prior engine's grew without bound. It is also demonstrably
+faster: ~2.6 ms per observe/predict/learn step at 300 rows against the prior engine's ~470 ms at
+the same point, and the gap widens with run length rather than closing.
+
+But validating on task rather than on bug-parity surfaced something the speedup does not fix.
+`Δ = ε · (reward − confidence)` is applied uniformly to every edge in the fired trace. When two
+motors compete, **both** of their inbound edges are in that trace and both move by the same delta
+with the same sign. The rule therefore cannot make the correct motor win; whichever motor leads at
+initialization keeps leading. Full measurements are in `specs/learning.md` — the short version is
+that the constant task, which any working learner must score ~1.0 on, scores 0.00 across seeds and
+across three orders of magnitude of learning rate.
+
+Two effects were separated. Saturation is a calibration fault: at the inherited `epsilon_start =
+0.7`, a single observation moves an edge rail to rail, every fired edge pins to the ceiling within
+a few steps, both motors receive numerically identical activation, and confidence and therefore the
+delta both collapse to exactly zero. A smaller rate avoids that. But with the rate small enough
+that strengths stay spread, reward still does not leave chance — so the second effect is not
+calibration.
+
+This is inherited, not introduced. The prior engine applied the same rule to the same mask, and its
+own measured baseline is flat at chance with three of six seeds failing to reach the motors at all.
+It also explains that baseline, which the random-bit demo could not: the demo's chance and ceiling
+are both 0.5, so it could never have distinguished a learning engine from a broken one.
+
+Relieving this means changing the learning rule — weighting each edge's update by its own
+contribution to the chosen answer against the correct one — which changes what Haze is rather than
+how fast it runs. It is therefore recorded here for an explicit decision rather than folded into
+the vectorization silently.
+
 ### Conventions
 
 The rewrite conforms to the workspace `src/{tokens,models,interfaces,modules,functions,errors,tests}`

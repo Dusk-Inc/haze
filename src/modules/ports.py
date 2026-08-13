@@ -74,7 +74,7 @@ class PortRegistry:
             role=role,
             key=key,
             impl=f"{type(impl).__module__}.{type(impl).__qualname__}",
-            width=width,
+            width=width or None,
             params=impl.toPortParams() if hasattr(impl, "toPortParams") else {},
         )
         self.impls[key] = impl

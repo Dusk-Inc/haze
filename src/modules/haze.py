@@ -1,13 +1,21 @@
 """The Haze model: a torch module whose shape changes as it learns."""
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import torch
 from huggingface_hub import PyTorchModelHubMixin
 from torch import nn
 
-from ..errors import CheckpointCorruptError, HazeError, LearningDisabledError
+from ..errors import (
+    CheckpointCorruptError,
+    HazeError,
+    LearningDisabledError,
+    PortNotFoundError,
+    SignalDidNotReachMotorsError,
+)
+from ..functions.learning import applyLearning
+from ..functions.propagate import flowSignalPass
 from ..functions.serialize import (
     ensureCheckpointCoherent,
     loadPortImpl,
@@ -18,7 +26,7 @@ from ..functions.serialize import (
     saveHazeCheckpoint,
     toStateTensors,
 )
-from ..models import ChainSpec, HazeConfig, MeshCapacity, Stage
+from ..models import ChainSpec, HazeConfig, HazeOutput, LearnResult, MeshCapacity, Stage
 from ..tokens import PortRole, defaults
 from .mesh import MeshState
 from .ports import PortRegistry
@@ -44,6 +52,7 @@ class Haze(nn.Module, PyTorchModelHubMixin):
         self.mesh = MeshState(config)
         self.ports = PortRegistry(self.mesh)
         self.learning_enabled = True
+        self._observations: dict[str, Any] = {}
 
         if config.counts.nexus == 0 and config.counts.terminus == 0:
             self.mesh.buildMesh(config.nexus_size, config.terminus_size)
@@ -93,6 +102,92 @@ class Haze(nn.Module, PyTorchModelHubMixin):
             stages=built, sequential=sequential, end_token=end_token
         )
 
+
+    def observe(self, inputs: Mapping[str, Any]) -> None:
+        """Encodes each named input and propagates it, holding the result for prediction."""
+        if not inputs:
+            raise PortNotFoundError("observe was given no inputs")
+
+        self._observations = {}
+        for key, value in inputs.items():
+            encoder = self.ports.impls.get(key)
+            if encoder is None:
+                self.ports.findPortSpec(key)
+                raise PortNotFoundError(f"port {key!r} has no implementation attached")
+
+            encoded = encoder.encodeFeatures(value)
+            sensors = self.ports.ensureSensorCapacity(key, int(encoded.numel()))
+            state = flowSignalPass(
+                self.mesh,
+                encoded.unsqueeze(0),
+                sensors,
+                self.config.hyper,
+            )
+            self._observations[key] = state
+        self.mesh.step_count += 1
+
+    def predict(self) -> HazeOutput:
+        """Decodes the motors each decoder owns from the last observation."""
+        if not self._observations:
+            raise SignalDidNotReachMotorsError("predict was called before observe")
+
+        activation = torch.zeros(int(self.mesh.kind.numel()), dtype=self.mesh.dtype)
+        for state in self._observations.values():
+            activation += state.motor_acc.sum(0)
+
+        output = HazeOutput(
+            hops=max((s.hops for s in self._observations.values()), default=0),
+            reached=any(s.reached for s in self._observations.values()),
+            stages=1,
+        )
+        for key in self.ports.findPortKeys(PortRole.DECODER):
+            decoder = self.ports.impls[key]
+            entry = self.ports.findLabels(key)
+            motors = self.ports.findActiveMotorIds(key)
+            states = activation[motors]
+            output.predictions[key] = [decoder.decodeMotors(states, entry)]
+            output.confidence[key] = decoder.calcMotorConfidence(states, entry)
+        return output
+
+    def learn(self, reward: float, reverse: bool = False) -> LearnResult:
+        """Moves the edges that carried signal toward the reward, and returns what changed."""
+        self.ensureLearningEnabled()
+        if not self._observations:
+            raise SignalDidNotReachMotorsError("learn was called before observe")
+
+        trace = torch.zeros(self.mesh.counts.edges, dtype=torch.bool)
+        for state in self._observations.values():
+            edge_trace = state.toEdgeTrace()
+            trace[: edge_trace.numel()] |= edge_trace
+
+        confidence = self.calcConfidenceAggregate()
+        return applyLearning(
+            self.mesh, trace, reward, confidence, self.config.hyper, reverse=reverse
+        )
+
+    def calcConfidenceAggregate(self) -> float:
+        """Returns the mean confidence across decoders, so it stays comparable to a reward."""
+        keys = self.ports.findPortKeys(PortRole.DECODER)
+        if not keys or not self._observations:
+            return 0.0
+
+        activation = torch.zeros(int(self.mesh.kind.numel()), dtype=self.mesh.dtype)
+        for state in self._observations.values():
+            activation += state.motor_acc.sum(0)
+
+        scores = []
+        for key in keys:
+            entry = self.ports.labels.get(key)
+            if entry is None:
+                continue
+            motors = self.ports.findActiveMotorIds(key)
+            scores.append(self.ports.impls[key].calcMotorConfidence(activation[motors], entry))
+        return sum(scores) / len(scores) if scores else 0.0
+
+    def forward(self, inputs: Mapping[str, Any]) -> HazeOutput:
+        """Observes and predicts in one call, so a Haze model is callable like any torch model."""
+        self.observe(inputs)
+        return self.predict()
 
     def train(self, mode: bool = True) -> "Haze":
         """Enables learning, the fired trace, and structural change; eval disables all three.
