@@ -72,12 +72,22 @@ class HazeHyper(BaseModel):
     fanout_max: int = Field(default=defaults.FANOUT_MAX, ge=1)
     sensor_fanout: int = Field(default=defaults.SENSOR_FANOUT, ge=1)
     motor_fanin: int = Field(default=defaults.MOTOR_FANIN, ge=1)
+    inhibitory_ratio: float = Field(default=defaults.INHIBITORY_RATIO, ge=0.0, lt=1.0)
+    """Share of new edges drawn inhibitory, so the mesh can express what an answer is not.
+
+    With only positive attenuating strengths a mesh can excite but never veto, so no input can
+    mean "not that answer". Zero restores the purely excitatory model. See specs/learning.md.
+    """
     credit_assignment: bool = True
     """Whether an edge's update is weighted by its own contribution to the chosen answer.
 
     False restores the inherited uniform rule, which cannot make one motor beat another and is
     kept only so the difference can be measured. See specs/learning.md.
     """
+
+    def calcStrengthFloor(self) -> float:
+        """Returns the lowest strength an edge may hold, which inhibition puts below zero."""
+        return -self.strength_upper if self.inhibitory_ratio > 0.0 else self.strength_lower
 
     @model_validator(mode="after")
     def ensureHyperCoherent(self) -> "HazeHyper":

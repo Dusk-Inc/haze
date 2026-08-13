@@ -103,6 +103,29 @@ first would discard what distinguishes one feature from another.
 Setting `credit_assignment` false restores the uniform rule, which is retained only so the
 difference stays measurable.
 
+### Edges may inhibit as well as excite
+
+**Given** a mesh whose strengths may be negative
+**When** signal traverses an inhibitory edge
+**Then** the signal it delivers is inverted, so an input can rule an answer out rather than only
+vote for one.
+
+Three things move together and each is a place the obvious code is wrong:
+
+- The path correction accumulates `log` of a strength's **magnitude**, since `log` is undefined for
+  a negative. The sign belongs to the signal rather than to the attenuation — it is the value that
+  inverts, while the amount of attenuation is a magnitude — so the sign travels in `value`.
+- The edge gate tests the **absolute** value, so a strongly inhibitory signal propagates as readily
+  as a strongly excitatory one. The neuron gate keeps testing the signed sum, since a net-inhibited
+  neuron should stay quiet.
+- Pruning tests magnitude. A useless edge is one near zero; testing the signed value would delete
+  every inhibitory edge the moment it was created.
+
+Measured over seeds 1-3, inhibition at a fifth of new edges raises the probe bound on copy from
+0.72 to 0.75 and on parity from 0.48 to 0.51, raises achieved majority from 0.27 to 0.34, and
+moderates edge activation from a 37-88% spread to 31-72%. Real but modest. `inhibitory_ratio = 0`
+restores the purely excitatory model.
+
 ## What credit assignment fixed, and what it did not
 
 The inherited rule moved **every edge in the trace by the same scalar**. When two motors compete

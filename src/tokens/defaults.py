@@ -97,6 +97,14 @@ Sampled per motor so different answers can read different evidence, which fully 
 makes impossible. Kept wide for the same stability reason as SENSOR_FANOUT.
 """
 
+INHIBITORY_RATIO = 0.2
+"""Share of new edges drawn inhibitory.
+
+Roughly the excitatory-to-inhibitory balance of cortex. Without inhibition a mesh can only ever
+excite, so it cannot express that one input rules an answer out, and a readout built from
+non-negative weights cannot subtract.
+"""
+
 FANOUT_MIN = 2
 """Fewest outgoing edges a newly wired interneuron is given."""
 

@@ -102,6 +102,16 @@ def calcEdgeSignal(
     return e_val, e_slog, e_plen, e_act
 
 
+def calcSignedLog(strength: Tensor) -> Tensor:
+    """Returns log of a strength's magnitude, which is what the path correction accumulates.
+
+    An inhibitory edge has a negative strength and `log` is undefined there. The sign belongs to
+    the signal rather than to the attenuation — it is the value that inverts, while the amount of
+    attenuation is a magnitude — so the sign travels in `value` and only the magnitude is logged.
+    """
+    return strength.abs().clamp_min(1e-6).log()
+
+
 def flowSignalStep(
     state: SignalState,
     src: Tensor,
@@ -123,7 +133,7 @@ def flowSignalStep(
     e_val, e_slog, e_plen, e_act = calcEdgeSignal(state, src, strength, log_str)
 
     edge_pass = (
-        (e_act > hyper.signal_threshold) & alive_e & active[dst] & (~state.fired)
+        (e_act.abs() > hyper.signal_threshold) & alive_e & active[dst] & (~state.fired)
     )
     if not bool(edge_pass.any()):
         return edge_pass
@@ -206,11 +216,12 @@ def flowSignalPassReference(
 ) -> dict[int, float]:
     """Returns motor activation computed edge by edge in plain Python, at any cost.
 
-    This exists to pin what the tensor engine means. The three subtle behaviors — carrying path
-    statistics, gating an edge once per observation rather than once per hop, and discarding
-    sub-threshold accumulation — all fail silently if implemented wrongly, producing a model
-    that runs and never learns. A slow implementation nobody would mistake for clever is the
-    thing to check the fast one against.
+    This exists to pin what the tensor engine means. The subtle behaviors — carrying path
+    statistics, keeping an inhibitory edge's sign in the value while logging only its magnitude,
+    gating an edge once per observation rather than once per hop, and discarding sub-threshold
+    accumulation — all fail silently if implemented wrongly, producing a model that runs and never
+    learns. A slow implementation nobody would mistake for clever is the thing to check the fast
+    one against.
     """
     import math
 
@@ -244,10 +255,10 @@ def flowSignalPassReference(
                 continue
             value, slog, plen = node[source]
             value *= weight
-            slog += math.log(weight)
+            slog += math.log(abs(weight))
             plen += 1.0
             actual = value * math.exp(slog / max(plen, 1.0))
-            if actual <= hyper.signal_threshold:
+            if abs(actual) <= hyper.signal_threshold:
                 continue
             claimed.add(index)
             any_fired = True

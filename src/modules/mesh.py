@@ -209,10 +209,16 @@ class MeshState(nn.Module):
             drawn = torch.empty(count, dtype=self.dtype).uniform_(
                 hyper.strength_init_lower, hyper.strength_init_upper, generator=self.generator
             )
+            if hyper.inhibitory_ratio > 0.0:
+                inhibitory = (
+                    torch.rand(count, dtype=self.dtype, generator=self.generator)
+                    < hyper.inhibitory_ratio
+                )
+                drawn = torch.where(inhibitory, -drawn, drawn)
         else:
             drawn = strength.to(self.dtype)
         self.strength[span] = drawn
-        self.log_str[span] = drawn.clamp_min(1e-6).log()
+        self.log_str[span] = drawn.abs().clamp_min(1e-6).log()
         self.epsilon[span] = hyper.epsilon_start
 
         first_id = int(self.next_edge_id.item())

@@ -82,13 +82,13 @@ def applyLearning(
     moved = torch.where(mask, delta, zero)
     mesh.strength[span] = torch.where(
         mask,
-        (mesh.strength[span] + moved).clamp(hyper.strength_lower, hyper.strength_upper),
+        (mesh.strength[span] + moved).clamp(hyper.calcStrengthFloor(), hyper.strength_upper),
         mesh.strength[span],
     )
     mesh.epsilon[span] = torch.where(
         mask, mesh.epsilon[span] * hyper.epsilon_decay, mesh.epsilon[span]
     )
-    mesh.log_str[span] = mesh.strength[span].clamp_min(1e-6).log()
+    mesh.log_str[span] = mesh.strength[span].abs().clamp_min(1e-6).log()
 
     return LearnResult(
         edges_updated=updated,
@@ -192,13 +192,13 @@ def applyCreditedLearning(
 
     mesh.strength[span] = torch.where(
         mask,
-        (mesh.strength[span] + moved).clamp(hyper.strength_lower, hyper.strength_upper),
+        (mesh.strength[span] + moved).clamp(hyper.calcStrengthFloor(), hyper.strength_upper),
         mesh.strength[span],
     )
     mesh.epsilon[span] = torch.where(
         mask, mesh.epsilon[span] * hyper.epsilon_decay, mesh.epsilon[span]
     )
-    mesh.log_str[span] = mesh.strength[span].clamp_min(1e-6).log()
+    mesh.log_str[span] = mesh.strength[span].abs().clamp_min(1e-6).log()
 
     return LearnResult(
         edges_updated=updated,
@@ -209,8 +209,13 @@ def applyCreditedLearning(
 
 
 def calcPruneMask(mesh, hyper: HazeHyper) -> Tensor:
-    """Returns which live edges have fallen to or below the pruning threshold."""
+    """Returns which live edges have fallen to or below the pruning threshold in magnitude.
+
+    Magnitude, not value: a useless edge is one near zero, while a strongly negative edge is a
+    strongly inhibitory one and carries as much information as a strongly positive one. Testing
+    the signed value would delete every inhibitory edge the moment it was created.
+    """
     live = mesh.counts.edges
     if live == 0:
         return torch.zeros(0, dtype=torch.bool)
-    return mesh.alive_e[:live] & (mesh.strength[:live] <= hyper.prune_threshold)
+    return mesh.alive_e[:live] & (mesh.strength[:live].abs() <= hyper.prune_threshold)

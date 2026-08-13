@@ -159,7 +159,7 @@ def test_applyLearning_doesRefreshTheCachedLogStrength():
     applyLearning(mesh, trace, reward=1.0, confidence=0.0, hyper=model.config.hyper)
 
     live = slice(0, mesh.counts.edges)
-    assert torch.allclose(mesh.log_str[live], mesh.strength[live].log(), atol=1e-5)
+    assert torch.allclose(mesh.log_str[live], mesh.strength[live].abs().log(), atol=1e-5)
 
 
 def test_calcConfidenceEntropy_doesPeakOnAConcentratedActivation():
@@ -232,7 +232,7 @@ def test_applyLearning_doesClampAtBothRails():
 
     for _ in range(6):
         applyLearning(mesh, trace, reward=0.0, confidence=1.0, hyper=hyper)
-    assert float(mesh.strength[live].min()) >= hyper.strength_lower - 1e-6
+    assert float(mesh.strength[live].min()) >= hyper.calcStrengthFloor() - 1e-6
 
 
 def test_calcConfidenceEntropy_doesHandleTheDegenerateCases():
@@ -310,3 +310,62 @@ def test_decodeMotors_doesReturnANumberFromARegressor():
     answer = model.ports.impls["value"].decodeMotors(torch.tensor([0.3, 0.7]), entry)
 
     assert answer == pytest.approx((0.3 * 1.0 + 0.7 * 10.0) / 1.0)
+
+
+def test_addMeshEdges_doesDrawAMixOfExcitatoryAndInhibitoryEdges():
+    """Asserts new edges include negative strengths, so the mesh can express a veto.
+
+    With only positive attenuating strengths a mesh can excite but never rule an answer out.
+    """
+    model, _, _ = makeWiredModel(seed=11)
+    live = slice(0, model.mesh.counts.edges)
+    strengths = model.mesh.strength[live]
+
+    assert bool((strengths < 0).any()), "no inhibitory edge was drawn"
+    assert bool((strengths > 0).any()), "no excitatory edge was drawn"
+
+
+def test_addMeshEdges_doesLogMagnitudeSoInhibitionIsDefined():
+    """Asserts the cached log holds the magnitude, since log of a negative strength is undefined.
+
+    The sign belongs to the signal rather than to the attenuation: it is the value that inverts,
+    while the amount of attenuation is a magnitude.
+    """
+    model, _, _ = makeWiredModel(seed=11)
+    live = slice(0, model.mesh.counts.edges)
+
+    assert bool(torch.isfinite(model.mesh.log_str[live]).all())
+    assert torch.allclose(
+        model.mesh.log_str[live], model.mesh.strength[live].abs().clamp_min(1e-6).log(), atol=1e-5
+    )
+
+
+def test_calcPruneMask_doesKeepStronglyInhibitoryEdges():
+    """Asserts pruning drops edges near zero rather than every negative one.
+
+    A strongly negative edge is a strongly inhibitory one and carries as much information as a
+    strongly positive one; testing the signed value would delete inhibition on creation.
+    """
+    model, _, _ = makeWiredModel(seed=11)
+    mesh = model.mesh
+    mesh.strength[: mesh.counts.edges] = -0.9
+    mesh.strength[0] = 0.0
+
+    mask = calcPruneMask(mesh, model.config.hyper)
+
+    assert int(mask.sum()) == 1
+    assert bool(mask[0])
+
+
+def test_flowSignalPass_doesCarrySignThroughAnInhibitoryEdge():
+    """Asserts an inhibitory edge inverts the signal it carries rather than dropping it."""
+    model = makeHaze(nexus_size=2, terminus_size=1, seed=1)
+    mesh = model.mesh
+    sensor = mesh.allocNeuronIds(1, NeuronKind.SENSOR, owner=0)
+    target = mesh.findNeuronIds(NeuronKind.NEXUS)[:1]
+    mesh.compactEdges(torch.zeros(mesh.capacity.edges, dtype=torch.bool))
+    mesh.addMeshEdges(sensor, target, strength=torch.tensor([-0.8]))
+
+    state = flowSignalPass(mesh, torch.tensor([[0.9]]), sensor, model.config.hyper)
+
+    assert float(state.node_acc.sum(0)[target[0]]) < 0
