@@ -84,6 +84,24 @@ class HazeHyper(BaseModel):
     False restores the inherited uniform rule, which cannot make one motor beat another and is
     kept only so the difference can be measured. See specs/learning.md.
     """
+    reward_baseline: bool = True
+    """Whether the learning signal is measured against expected reward rather than confidence.
+
+    False restores the inherited `reward - confidence` signal, which is not centred on anything
+    the mesh is trying to beat and therefore pushes the incumbent answer regardless of whether it
+    was right. Kept only so the difference can be measured. See specs/learning.md.
+    """
+    reward_baseline_rate: float = Field(
+        default=defaults.REWARD_BASELINE_RATE, gt=0.0, le=1.0
+    )
+    """How fast the running reward baseline tracks recent reward. See specs/learning.md."""
+    explore_rate: float = Field(default=defaults.EXPLORE_RATE, ge=0.0, lt=1.0)
+    """Share of learning observations answered with a random label rather than the best one.
+
+    Zero is a valid setting and restores a purely greedy readout, but it is not a safe one while
+    `reward_baseline` is on: the two are one mechanism, and the baseline has no way out of a
+    uniformly-wrong answer without variance to learn from. See specs/learning.md.
+    """
 
     def calcStrengthFloor(self) -> float:
         """Returns the lowest strength an edge may hold, which inhibition puts below zero."""

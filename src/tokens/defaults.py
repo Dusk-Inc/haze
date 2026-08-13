@@ -40,11 +40,36 @@ STRENGTH_INIT_LOWER = 0.4
 STRENGTH_INIT_UPPER = 0.9
 """Upper bound of the uniform range a new edge's strength is drawn from."""
 
-EPSILON_START = 0.7
-"""Learning rate a new edge begins with."""
+EPSILON_START = 0.1
+"""Learning rate a new edge begins with.
+
+The inherited value was 0.7, which is rail-to-rail on a [0.1, 0.9] range in a single observation:
+within a handful of steps every fired edge sat at the ceiling, both motors received numerically
+identical activation, confidence fell to zero, and so did the update. The mesh stopped changing
+at all. Chosen by measurement rather than inherited — 0.15 scores higher on copy and majority but
+drives parity, a task at its own chance bound, to 0.23, which is a mesh confidently learning a
+wrong rule rather than declining to learn. See specs/learning.md.
+"""
 
 EPSILON_DECAY = 0.9999
 """Multiplier applied to an edge's learning rate each time it is updated."""
+
+REWARD_BASELINE_RATE = 0.02
+"""How fast the running reward baseline tracks recent reward.
+
+The baseline is what makes the learning signal an advantage rather than a raw reward, and its
+rate is the only tuning it has. Too fast and it absorbs the very improvement it should be
+measuring; too slow and it lags a mesh whose behaviour has changed. See specs/learning.md.
+"""
+
+EXPLORE_RATE = 0.05
+"""Share of learning observations answered with a random label rather than the best one.
+
+Inseparable from the reward baseline: a centred advantage learns from the difference between
+outcome and expectation, so a greedy readout on a uniformly-wrong mesh produces no variance and
+therefore no signal. Measured, zero exploration left one seed in three stuck at 0.00 on the
+constant task forever. Applies only while learning; `eval()` always answers greedily.
+"""
 
 PRUNE_THRESHOLD = 0.2
 """An edge at or below this strength is removed. See specs/pruning.md."""

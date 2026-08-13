@@ -34,6 +34,8 @@ def toStateTensors(mesh: Any) -> dict[str, Tensor]:
         "alive_e",
         "step_count",
         "next_edge_id",
+        "reward_bar",
+        "learn_count",
     )
     payload = {name: getattr(mesh, name).detach().cpu().contiguous().clone() for name in names}
     payload["rng_state"] = mesh.generator.get_state().clone()

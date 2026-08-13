@@ -21,6 +21,8 @@ TENSOR_BUFFERS = (
     "alive_e",
     "step_count",
     "next_edge_id",
+    "reward_bar",
+    "learn_count",
 )
 
 

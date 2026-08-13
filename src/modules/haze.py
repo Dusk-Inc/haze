@@ -19,6 +19,8 @@ from ..functions.learning import (
     applyLearning,
     calcMotorSeeds,
     calcNeuronCredit,
+    calcRewardAdvantage,
+    switchMotorChoice,
 )
 from ..functions.propagate import flowSignalPass
 from ..functions.serialize import (
@@ -146,11 +148,12 @@ class Haze(nn.Module, PyTorchModelHubMixin):
             reached=any(s.reached for s in self._observations.values()),
             stages=1,
         )
+        rate = self.config.hyper.explore_rate if self.learning_enabled else 0.0
         for key in self.ports.findPortKeys(PortRole.DECODER):
             decoder = self.ports.impls[key]
             entry = self.ports.findLabels(key)
             motors = self.ports.findActiveMotorIds(key)
-            states = activation[motors]
+            states = switchMotorChoice(activation[motors], rate, self.mesh.generator)
             answer = decoder.decodeMotors(states, entry)
             output.predictions[key] = [answer]
             output.confidence[key] = decoder.calcMotorConfidence(states, entry)
@@ -179,7 +182,7 @@ class Haze(nn.Module, PyTorchModelHubMixin):
                 self.mesh, trace, reward, confidence, self.config.hyper, reverse=reverse
             )
 
-        gain = float(reward) - float(confidence)
+        gain = calcRewardAdvantage(self.mesh, reward, self.config.hyper)
         seeds: dict[int, float] = {}
         for key, chosen in self._chosen.items():
             motors = self.ports.findActiveMotorIds(key)

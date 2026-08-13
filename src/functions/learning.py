@@ -99,6 +99,71 @@ def applyLearning(
     )
 
 
+def calcRewardAdvantage(mesh, reward: float, hyper: HazeHyper) -> float:
+    """Returns how much a reward beat what the mesh had come to expect, and records the reward.
+
+    This is the factor that decides the sign of every update, so what it is measured against
+    decides what the mesh learns. Measured against `confidence` — the inherited signal — it is
+    not centred on anything: a correct answer contributes `1 - c` and a wrong one only `-c`, so
+    at even odds and typical confidence the chosen answer's path is reinforced by a net positive
+    amount *whether or not it was right*. Measured, that ran to a fixed point where one motor won
+    on 96-100% of observations and the mesh answered the same label forever.
+
+    Centring on the mesh's own recent reward removes exactly that term. The expectation of the
+    advantage is zero by construction, so a uniform push cancels and only the part of an edge's
+    activity that covaries with the outcome accumulates. See specs/learning.md.
+
+    The baseline is seeded from the first reward rather than from zero or from an assumed 0.5.
+    A single sample is its own expectation, so the first advantage is exactly zero and nothing is
+    learned from an outcome there was no expectation to compare against. Seeding at zero would
+    instead spend the whole warm-up applying the uniform push this function exists to remove, and
+    seeding at 0.5 would assume a reward scale the caller never agreed to.
+
+    The reward is checked here as well as at the update, because the baseline is persistent state:
+    a non-finite reward that reached it would survive into the checkpoint and poison every later
+    advantage, long after the observation that caused it.
+    """
+    ensureRewardFinite(reward, 0.0)
+    if not hyper.reward_baseline:
+        return float(reward)
+
+    seen = int(mesh.learn_count[0])
+    baseline = float(reward) if seen == 0 else float(mesh.reward_bar[0])
+    mesh.reward_bar[0] = baseline + hyper.reward_baseline_rate * (float(reward) - baseline)
+    mesh.learn_count[0] = seen + 1
+    return float(reward) - baseline
+
+
+def switchMotorChoice(states: Tensor, rate: float, generator: torch.Generator) -> Tensor:
+    """Returns motor activation with a random motor swapped into the lead, at the explore rate.
+
+    A centred advantage learns from the difference between what happened and what was expected,
+    which means it learns nothing at all when nothing varies. A greedy readout on a mesh that is
+    uniformly wrong produces exactly that: reward is constant, the baseline meets it, the
+    advantage is zero, and the mesh stays wrong forever. Measured on the constant task, one seed
+    in three settled at 0.00 and never moved. Reward variance is not a nuisance here, it is the
+    only thing there is to learn from, and a deterministic readout produces none.
+
+    A swap rather than a boost, because the multiset of activations is preserved: confidence,
+    entropy, and every magnitude-sensitive decoder behave exactly as they would have, and the one
+    thing that changes is which label holds the peak. Promoting by an added margin would instead
+    make the mesh look more certain precisely when it is guessing.
+    """
+    if rate <= 0.0 or states.numel() < 2:
+        return states
+    if float(torch.rand(1, generator=generator)) >= rate:
+        return states
+
+    pick = int(torch.randint(0, states.numel(), (1,), generator=generator))
+    lead = int(torch.argmax(states))
+    if pick == lead:
+        return states
+
+    switched = states.clone()
+    switched[lead], switched[pick] = states[pick], states[lead]
+    return switched
+
+
 def calcNeuronCredit(
     mesh, trace: Tensor, seeds: dict[int, float], hops: int
 ) -> Tensor:

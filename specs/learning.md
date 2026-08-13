@@ -12,16 +12,59 @@ experience.
 
 ## Policies
 
-### The learning signal is the gap between reward and confidence
+### The learning signal is how much the reward beat expectation
 
-**Given** a prediction scored with reward `r`, made with confidence `c`
+**Given** a prediction scored with reward `r`, against a running mean reward `r̄`
 **When** learning is applied
-**Then** every edge in the trace moves by `epsilon · (r − c)`, and its `epsilon` is multiplied by
-`epsilon_decay`.
+**Then** the update is driven by the advantage `r − r̄`, and `r̄` moves toward `r` at
+`reward_baseline_rate`.
 
-The sign follows directly: a confident wrong answer is punished hardest, a hesitant right answer is
-reinforced hardest, and a confident right answer barely moves — the network stops adjusting what it
-already reliably knows.
+What the reward is measured against decides what the mesh learns, and the inherited signal was
+measured against **confidence**, which is not something the mesh is trying to beat. A correct
+answer contributed `1 − c` and a wrong one only `−c`, so at even odds and typical confidence the
+chosen answer's path was reinforced by a net positive amount **whether or not it was right**. That
+is a positive feedback loop on whichever motor happened to lead, and it has a fixed point.
+
+Measured on the copy task, it reached that fixed point every time: one motor won 96–100% of
+observations, the mesh answered the same label forever, and reward sat at exactly chance. The
+discriminative part of the signal was there but buried — the label-covarying component of an
+edge's eligibility measured 2.5–3% of its mean, so the uniform push outweighed it roughly forty to
+one.
+
+Centring on the mesh's own recent reward removes exactly that term. The expectation of the
+advantage is zero by construction, so the uniform push cancels and only the part of an edge's
+activity that covaries with the outcome accumulates. Nothing else has to change: `eligibility ×
+credit` already forms a covariance once the factor multiplying it is centred.
+
+Centring the **eligibility** as well was tried and is worse — copy 0.83 → 0.51 — because the
+product is then centred twice and the second centring only adds variance.
+
+The baseline is seeded from the first reward rather than from zero or from an assumed 0.5. One
+sample is its own expectation, so the first advantage is exactly zero; seeding at zero would spend
+the whole warm-up applying the very push this removes, and seeding at 0.5 would assume a reward
+scale the caller never agreed to. Setting `reward_baseline` false restores the inherited signal,
+which is retained only so the difference stays measurable.
+
+### A centred advantage requires a stochastic readout
+
+**Given** a mesh whose answer is wrong on every observation
+**When** learning is applied
+**Then** it would receive no signal at all, so `explore_rate` of observations are answered with a
+random active label instead of the best one.
+
+These two are one mechanism and cannot be shipped apart. An advantage learns from the difference
+between outcome and expectation, so it learns nothing when nothing varies — and a greedy readout
+on a uniformly wrong mesh produces exactly that: reward is constant, the baseline meets it, the
+advantage is zero, and the mesh stays wrong forever. Measured on the constant task with no
+exploration, one seed in three settled at 0.00 and never moved. Reward variance is not a nuisance
+here; it is the only thing there is to learn from, and a deterministic readout produces none.
+
+Exploration is a **swap** into the lead rather than a boost, so the multiset of activations is
+preserved: confidence, entropy, and every magnitude-sensitive decoder behave exactly as they would
+have, and the one thing that changes is which label holds the peak. A boost would instead make the
+mesh look more certain precisely when it is guessing, and confidence feeds both the learning
+signal and the growth trigger. It applies only while learning — `eval()` always answers greedily,
+so exploration never reaches a deployed answer.
 
 ### Strength is bounded
 
@@ -85,8 +128,8 @@ differ. Keep B modest.
 **Given** an observation that produced an answer
 **When** learning is applied
 **Then** each fired edge moves by three factors multiplied together — how much signal it carried,
-how much credit reaches the neuron it fed, and how far the reward diverged from the confidence —
-rather than by one shared scalar.
+how much credit reaches the neuron it fed, and how far the reward beat expectation — rather than
+by one shared scalar.
 
 Credit is seeded at the motor the decoder actually chose, because learning is told a reward and
 never the correct label. A rewarded choice reinforces the path that produced it and weakens its
@@ -159,32 +202,67 @@ Credited learning resolves the second effect for a task that needs a **bias**: t
 goes from 0.00 to 0.99–1.00 across seeds, because the chosen motor's path can now be reinforced
 while its rivals' are weakened.
 
-It does **not** yet resolve tasks that need the answer to depend on the **input**:
+It did **not** on its own resolve tasks whose answer must depend on the **input**. That took two
+further changes to the representation (one observation per lane, and the band reconciled with the
+gate — see specs/propagation.md) and then the centred advantage above.
 
-| task | chance | ceiling | uniform | credited |
+## Where the tasks stand
+
+Held-out greedy accuracy on 200 rows never trained on, after 800 training observations, averaged
+over seeds 1–6, at the shipped defaults. Scored in `eval()` so exploration never flatters the
+number, and on fresh rows so memorisation cannot.
+
+| task | chance | probe bound | inherited `r − c` | centred advantage |
 |---|---|---|---|---|
-| constant | 0.50 | 1.00 | 0.00 | **1.00** |
-| copy `row[0]` | 0.50 | 1.00 | 0.45 | 0.44 |
-| majority | 0.50 | 1.00 | 0.61 | 0.39 |
-| parity | 0.50 | 1.00 | 0.53 | 0.35 |
+| constant | 0.50 | 1.00 | 0.83 (one seed at 0.00) | **1.00** |
+| copy `row[0]` | 0.50 | 0.80 | 0.49 | **0.86** |
+| majority | 0.50 | 0.81 | 0.58 | **0.60** |
+| parity | 0.50 | 0.50 | 0.49 | 0.50 |
 
-Two structural facts, measured, bound this and are not learning-rule questions:
+Copy is the change: 0.49 to 0.86, from chance to most of the way to the ceiling. Constant is now
+solved on every seed rather than most of them. Majority moves much less, and remains the clearest
+open gap — 0.60 achieved against a bound of 0.81. Parity's bound *is* chance, so it is
+representation-limited and no rule change touches it; it is kept as a diagnostic of whether the
+mesh forms a genuine conjunction, and it does not.
 
-- **A third of the signal band is mute.** An input at the band floor of 0.1 attenuates to at most
-  0.09 across one edge, which never clears the 0.3 edge gate, so a feature at its minimum fires no
-  edge at all and an all-minimum observation produces no answer. The band and the gate were never
-  reconciled with each other.
-- **The mesh has no input-specific representation.** Between 55% and 83% of all edges fire on any
-  given observation, and the fired sets of different inputs overlap by a Jaccard of 0.67 to 0.83.
-  A sweep over `signal_threshold` and `neuron_firing_threshold` traded density against depth
-  without producing above-chance discrimination anywhere: sparser settings starved the motors
-  entirely rather than making the representation selective.
+### The probe bound is not a ceiling on a trained mesh
 
-The likely cause is the wiring, not the rule: every sensor connects to **every** nexus interneuron,
-so each feature excites the same population in the same way and there is no feature-specific
-pathway for learning to strengthen differentially. Resolving that means changing the topology —
-sparse or locally-structured sensor projection — which is a change to the architecture, and is
-recorded here rather than made unilaterally.
+It is a bound on what a matched readout could extract from the terminus of an **untrained** one.
+Learning moves the sensor→nexus→terminus edges too, so the representation being read is not the
+representation that was measured, and a trained mesh may legitimately exceed it — as copy does.
+
+This matters because the earlier stages of this work read "achieved vs bound" as if the bound were
+a ceiling on the finished system. It is not, and a gap below it is the diagnostic it was built to
+be — the information is present at initialization and the rule is failing to extract it — while a
+result above it is not a contradiction and not an error.
+
+Two related traps in the same instrument, both hit and both now closed: the probe scored on its own
+training data with signed unbounded weights and a bias term the mesh has no equivalent of, which
+inflated copy to 0.91 and majority to 0.98; and it took `strength_lower` as the readout's floor
+after inhibition had moved the real floor to `−strength_upper`, reporting a bound the mesh had
+already beaten. `probeRepresentation` now takes the hyperparameters rather than a weight range so
+the second cannot recur.
+
+### Rate is a real trade-off, not a free parameter
+
+`epsilon_start` was inherited at 0.7, which is rail-to-rail in one observation and saturates the
+mesh within a handful of steps. It is now 0.1, chosen by measurement over seeds 1–6:
+
+| `epsilon_start` | `explore_rate` | constant | copy | majority | parity |
+|---|---|---|---|---|---|
+| 0.05 | 0.00 | 0.83 | 0.79 | 0.61 | 0.51 |
+| 0.05 | 0.05 | 1.00 | 0.75 | 0.56 | 0.46 |
+| 0.10 | 0.00 | 1.00 | 0.90 | 0.47 | 0.47 |
+| **0.10** | **0.05** | **1.00** | **0.86** | **0.60** | **0.50** |
+| 0.10 | 0.10 | 1.00 | 0.85 | 0.51 | 0.39 |
+| 0.15 | 0.05 | 1.00 | 0.91 | 0.65 | 0.23 |
+
+0.15 scores highest on copy and majority and is not the default, because it drives parity to 0.23
+— well *below* the 0.50 chance its own bound sits at. A mesh scoring below chance on a task it
+cannot represent has not failed to learn, it has confidently learned a wrong rule, and the same
+instability shows up as `majority` at 0.04 on a single seed at 0.10/0.00. Declining to learn is
+the safe failure and being confidently wrong is not, so the default is the setting where nothing
+is driven below chance.
 
 ### Updates use full-tensor selection, never boolean indexing
 

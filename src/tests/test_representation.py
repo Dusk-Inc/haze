@@ -109,19 +109,27 @@ def test_calcRepresentationRank_doesReportFullRankUnderPerRowLanes():
     )
 
 
+@pytest.mark.slow
 def test_probeRepresentation_doesReportABoundPerTask():
-    """Asserts the probe returns a rank and a per-task bound under the mesh's own weight range."""
+    """Asserts the probe returns a rank and a per-task bound under the mesh's own weight range.
+
+    Slow because the probe fits one readout per task by gradient descent, and its cost is
+    dominated by torch's thread overhead on tensors far too small to amortize it: the same fit
+    takes 5s on one thread and 15s on six. It is a measurement instrument rather than a
+    correctness check, so it is kept out of the default gate.
+    """
     rows = makeBinaryRows(200, 8, seed=5)
     features = collectTerminus(5, rows)
     hyper = HazeHyper()
 
-    report = probeRepresentation(features, rows, hyper.strength_lower, hyper.strength_upper)
+    report = probeRepresentation(features, rows, hyper)
 
     assert report["rank"] > 0
     assert set(report["bounds"]) == set(TASKS)
     assert all(0.0 <= v <= 1.0 for v in report["bounds"].values())
 
 
+@pytest.mark.slow
 def test_fitReadoutProbe_doesRecoverASeparableTarget():
     """Asserts the probe finds a readout that exists, so a low bound means the task is hard."""
     signal = torch.randn(300, 6, generator=torch.Generator().manual_seed(1))
@@ -211,12 +219,13 @@ def test_ensureHyperCoherent_doesRefuseAnInvertedBand():
 # -- Chaos ---------------------------------------------------------------------------------
 
 
+@pytest.mark.slow
 def test_probeRepresentation_doesSurviveADegenerateRecording():
     """Asserts an all-identical representation reports rank 1 and chance-level bounds."""
     rows = makeBinaryRows(80, 8, seed=2)
     features = torch.ones(len(rows), 6)
 
-    report = probeRepresentation(features, rows, 0.1, 0.9)
+    report = probeRepresentation(features, rows, HazeHyper())
 
     assert report["rank"] <= 1
     assert report["bounds"]["parity"] < 0.75

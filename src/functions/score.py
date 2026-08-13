@@ -137,8 +137,7 @@ def calcRepresentationRank(features: Tensor) -> tuple[int, int]:
 def probeRepresentation(
     features: Tensor,
     rows: Sequence[Sequence[int]],
-    lower: float,
-    upper: float,
+    hyper: Any,
     tasks: dict[str, Task] | None = None,
 ) -> dict[str, Any]:
     """Returns what the recorded activations can support, per task, under a matched readout.
@@ -146,8 +145,14 @@ def probeRepresentation(
     This is the instrument every structural change is judged by. A change that raises these
     numbers improved the representation; a change that raises achieved reward without raising
     them improved the learning rule. Distinguishing the two is the whole point.
+
+    Takes the hyperparameters rather than a weight range because the range a caller would reach
+    for is the wrong one. Once inhibition exists the readout's floor is `calcStrengthFloor()`,
+    not `strength_lower`, and passing the latter reports a bound the mesh has already beaten —
+    which is worse than no bound, since it retires work that is not finished.
     """
     tasks = tasks or TASKS
+    lower, upper = hyper.calcStrengthFloor(), hyper.strength_upper
     rank, dimension = calcRepresentationRank(features)
     bounds: dict[str, float] = {}
     for name, task in tasks.items():

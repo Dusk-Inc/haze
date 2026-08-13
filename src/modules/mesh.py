@@ -53,6 +53,8 @@ class MeshState(nn.Module):
 
         self.register_buffer("step_count", torch.zeros(1, dtype=torch.int64))
         self.register_buffer("next_edge_id", torch.zeros(1, dtype=torch.int64))
+        self.register_buffer("reward_bar", torch.zeros(1, dtype=self.dtype))
+        self.register_buffer("learn_count", torch.zeros(1, dtype=torch.int64))
 
         self.counts = MeshCounts(**config.counts.model_dump())
         self.free_slots: dict[NeuronKind, list[int]] = {kind: [] for kind in BLOCK_ORDER}
