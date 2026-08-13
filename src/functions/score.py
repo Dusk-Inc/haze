@@ -43,14 +43,41 @@ def scoreParity(row: Sequence[int]) -> int:
     return sum(row) % 2
 
 
+def scoreFirstSet(row: Sequence[int]) -> int:
+    """Returns the index of the row's first set bit, or its width if none is set.
+
+    The capacity task: unlike the binary four, what a readout can extract from this one rises
+    with the width of the terminus — measured at a matched-probe bound of 0.50 on a terminus of
+    4, which is exactly chance, against 0.65 on a terminus of 32. That makes it the only task
+    here that can demonstrate growth at all, since growth answers a capacity limit and the others
+    are already saturated at initialization. See specs/growth.md.
+    """
+    for index, bit in enumerate(row):
+        if bit:
+            return index
+    return len(row)
+
+
 TASKS: dict[str, Task] = {
     "constant": scoreConstant,
     "copy": scoreCopy,
     "majority": scoreMajority,
     "parity": scoreParity,
+    "first-set": scoreFirstSet,
 }
 
-CHANCE: dict[str, float] = {"constant": 0.5, "copy": 0.5, "majority": 0.5, "parity": 0.5}
+CHANCE: dict[str, float] = {
+    "constant": 0.5,
+    "copy": 0.5,
+    "majority": 0.5,
+    "parity": 0.5,
+    "first-set": 0.51,
+}
+"""Accuracy the majority label alone reaches, which is the floor a result must clear.
+
+Not 1/classes: `first-set` has nine labels but its first is set on half of all rows, so always
+answering it scores 0.51 and a nine-class result near 0.5 has learned nothing.
+"""
 
 
 def calcRewardMean(rewards: Sequence[float], window: int = 200) -> float:

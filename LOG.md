@@ -308,3 +308,56 @@ Held-out greedy accuracy on 200 fresh rows, seeds 1-6: copy **0.95** (worst seed
 0.65, against probe bounds of 0.80 and 0.81. Copy is now above its untrained bound on every seed,
 which the trained-mesh probe explains — the mesh reshapes its representation toward that task.
 Majority still does not, and remains the open readout gap.
+
+## Looking for a task that could demonstrate growth, and finding the label cliff
+
+Growth was wired but could not be shown to do anything, because every task in the suite is already
+saturated at initialization — the probe reports the terminus carrying 0.80–0.82 of the available
+information before a single observation. Growth answers a capacity limit, so a task with no
+capacity limit can only measure its cost.
+
+`first-set` — the index of the row's first set bit — is that task. Its matched-probe bound rises
+with terminus width, 0.50 on a terminus of 4 (exactly chance) against 0.65 on 32, and a test now
+pins that so it cannot quietly stop being capacity-limited.
+
+It still did not demonstrate growth, for a reason worth more than the demonstration would have
+been. Growth from a narrow start made things worse (0.32 to 0.15 from a terminus of 4) and grew the
+mesh enormously, 4→35 terminus and 64→372 nexus. But the absolute numbers were the tell: every
+variant was *below* chance. The mesh was not learning the task at any size, so there was nothing
+for growth to improve.
+
+### It is the label count, and the cliff is between two and three
+
+Same task, coarsened only in how many labels it has, with the majority class held at half the rows
+so chance stays 0.51 throughout:
+
+| labels | achieved | lift over chance |
+|---|---|---|
+| 2 | 0.86 | **+0.35** |
+| 3 | 0.59 | +0.08 |
+| 4 | 0.58 | +0.07 |
+| 6 | 0.57 | +0.06 |
+| 9 | 0.46 | **−0.05** |
+
+Not capacity: the same task at two labels reaches 0.94–0.98 on the same mesh, and a *larger* mesh
+makes nine labels worse (0.46 at terminus 32, 0.27 at 64). Not a gradual decay either — it falls
+off almost entirely at the third label.
+
+The cause is what a scalar reward can carry. Learning is told whether its answer was right, never
+what the right answer was. At two labels that is complete information, because "not the one I
+chose" names the other exactly, and the rival seed is the correct corrective signal. At three or
+more it is ambiguous, and the seed spread across rivals is right about at most one of them.
+
+I expected the rival seeding to be the culprit and tested it: seeding only the chosen motor,
+halving the rival share, and quadrupling exploration all land within noise of the current rule and
+of each other. The information is absent, not misallocated. Exploration cannot rescue it either —
+a random alternative is correct one time in `k−1` while the signal promoting it is already divided
+by `k−1`.
+
+The promising direction is structural rather than another rule: express a `k`-label choice as
+`⌈log₂ k⌉` binary ones, a code over motors instead of one motor per label, which puts every
+decision back in the regime that demonstrably works and makes label count logarithmic. That is a
+change to the decoder contract, so it is recorded rather than taken.
+
+This is the binding constraint on the multi-modal goal, where label spaces are large by nature, and
+it outranks both the majority readout gap and growth as the thing to resolve next.

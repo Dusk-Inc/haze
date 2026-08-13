@@ -323,6 +323,47 @@ instability shows up as `majority` at 0.04 on a single seed at 0.10/0.00. Declin
 the safe failure and being confidently wrong is not, so the default is the setting where nothing
 is driven below chance.
 
+### The rule decides between two labels, and does not yet decide between more
+
+**Given** a decoder with three or more active labels
+**When** learning is applied
+**Then** it extracts almost nothing, and past about nine labels it scores below chance.
+
+Measured on one task held fixed and coarsened only in its label count, with the majority class
+held at half the rows so chance stays 0.51 throughout:
+
+| labels | achieved | lift over chance |
+|---|---|---|
+| 2 | 0.86 | **+0.35** |
+| 3 | 0.59 | +0.08 |
+| 4 | 0.58 | +0.07 |
+| 6 | 0.57 | +0.06 |
+| 9 | 0.46 | **−0.05** |
+
+The cliff is between two and three, not a gradual decay, and it is not capacity: the same task at
+two labels reaches 0.94–0.98 on the same mesh, and making the mesh *larger* makes nine labels
+worse rather than better (0.46 at a terminus of 32, 0.27 at 64).
+
+The reason is what a scalar reward can carry. Learning is told whether its answer was right, never
+what the right answer was. With two labels that is complete information — "not the one I chose"
+names the other one exactly, so the rival seed is precisely the correct corrective signal. With
+three or more it is ambiguous, and the seed spread across the rivals is right about at most one of
+them and wrong about the rest.
+
+No seeding scheme fixes this, because the information is absent rather than misallocated. Measured:
+seeding only the chosen motor, halving the rival share, and quadrupling the exploration rate all
+land within noise of each other and of the current rule. Exploration cannot rescue it either — a
+random alternative is correct one time in `k − 1`, while the signal promoting it is already
+divided by `k − 1`.
+
+The way out is likely to be structural rather than another rule: since binary decisions work, a
+`k`-label choice expressed as `⌈log₂ k⌉ binary ones — a code over motors rather than one motor per
+label — would put every decision back in the regime that works, and would turn label count from a
+linear cost into a logarithmic one. That is a change to the decoder contract and is recorded here
+rather than made unilaterally.
+
+This is the binding constraint on multi-modal work, where label spaces are large by nature.
+
 ### Updates use full-tensor selection, never boolean indexing
 
 **Given** a learning step

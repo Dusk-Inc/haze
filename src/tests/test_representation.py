@@ -14,6 +14,7 @@ from haze.functions.score import (
     probeRepresentation,
     scoreConstant,
     scoreCopy,
+    scoreFirstSet,
     scoreMajority,
     scoreParity,
 )
@@ -23,9 +24,9 @@ from haze.modules.decoders import ArgMax
 from haze.tokens import NeuronKind, defaults
 
 
-def makeProbeModel(seed: int, features: int = 8):
+def makeProbeModel(seed: int, features: int = 8, terminus: int = 24):
     """Returns a wired model plus its encoder, sensors, and terminus ids, ready to probe."""
-    model = makeHaze(nexus_size=48, terminus_size=24, seed=seed)
+    model = makeHaze(nexus_size=48, terminus_size=terminus, seed=seed)
     encoder = NumericEncoder()
     model.registerEncoder("bits", encoder)
     model.registerDecoder("bit", ArgMax(labels=[0, 1]))
@@ -147,6 +148,41 @@ def test_scoreTasks_doesDefineTheirOwnCeilings():
     assert scoreCopy([1, 0, 0, 0]) == 1 and scoreCopy([0, 1, 1, 1]) == 0
     assert scoreMajority([1, 1, 1, 0]) == 1 and scoreMajority([1, 0, 0, 0]) == 0
     assert scoreParity([1, 1, 0, 0]) == 0 and scoreParity([1, 0, 0, 0]) == 1
+    assert scoreFirstSet([0, 0, 1, 0]) == 2 and scoreFirstSet([1, 1, 1, 1]) == 0
+    assert scoreFirstSet([0, 0, 0, 0]) == 4, "an empty row must not collide with index 0"
+
+
+@pytest.mark.slow
+def test_scoreFirstSet_doesRaiseItsBoundWithMeshSize():
+    """Asserts first-set is genuinely capacity-limited, which is what makes it the growth task.
+
+    Every other task here is already saturated at initialization, so growth — which answers a
+    capacity limit — has nothing to fix and can only show its own cost. This one starts at exactly
+    chance on a narrow terminus. See specs/growth.md.
+    """
+    rows = makeBinaryRows(300, 8, seed=5)
+    hyper = HazeHyper()
+
+    def boundAt(width):
+        """Returns the matched-probe bound on first-set for a terminus of the given width."""
+        model, encoder, sensors, terminus = makeProbeModel(seed=5, features=8, terminus=width)
+        collected = torch.stack([
+            flowSignalPass(
+                model.mesh, encoder.encodeFeatures(row).unsqueeze(0), sensors, hyper
+            ).toNodeActivation()[terminus]
+            for row in rows
+        ])
+        answers = [scoreFirstSet(row) for row in rows]
+        labels = sorted(set(answers))
+        index = {v: i for i, v in enumerate(labels)}
+        targets = torch.tensor([index[a] for a in answers], dtype=torch.int64)
+        return fitReadoutProbe(
+            collected, targets, len(labels), hyper.calcStrengthFloor(), hyper.strength_upper
+        )
+
+    assert boundAt(32) > boundAt(4) + 0.05, (
+        "first-set is no longer capacity-limited, so it cannot demonstrate growth"
+    )
 
 
 def test_makeBinaryRows_doesProduceIndependentRows():
