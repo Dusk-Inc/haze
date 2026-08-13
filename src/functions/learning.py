@@ -28,8 +28,14 @@ def calcConfidenceEntropy(states: Tensor, epsilon: float = 1e-9) -> float:
 
     Defined at both degenerate cases: a single label has zero maximum entropy, and an activation
     summing to zero has no distribution at all. Both arise in ordinary use.
+
+    Computed over magnitudes, since an inhibited motor carries as much evidence as an excited
+    one and a signed value is not a probability. On non-negative activation this is exactly the
+    previous behaviour; on signed activation the previous form reported total certainty for any
+    set with a positive sum and total uncertainty for any set without one, which is not a
+    measurement of anything and fed straight into the growth trigger.
     """
-    signals = states.to(torch.float64).flatten()
+    signals = states.to(torch.float64).flatten().abs()
     if signals.numel() == 0:
         return 0.0
     if signals.numel() == 1:
@@ -47,6 +53,31 @@ def calcConfidenceEntropy(states: Tensor, epsilon: float = 1e-9) -> float:
     return max(0.0, min(1.0, 1.0 - entropy / max_entropy))
 
 
+def calcRecoveryMask(mesh, node_activation: Tensor, trace: Tensor) -> Tensor:
+    """Returns the unfired edges leaving a neuron the signal actually reached.
+
+    The wavefront's own boundary, rather than every edge that did not fire. A mesh that failed to
+    reach its motors stopped somewhere specific, and the only edges that can extend it are the
+    ones leaving neurons the signal got to; strengthening an edge whose source was never active
+    cannot improve reachability and does damage learned structure.
+
+    That distinction is not theoretical. Pushing every unfired edge up — which is what "strengthen
+    the edges that did not carry signal" reads as — moves on the order of a hundred and seventy
+    edges at once, and firing it a handful of times across a run took held-out accuracy on copy
+    from 0.95 to 0.74. See specs/learning.md.
+    """
+    live = mesh.counts.edges
+    if live == 0:
+        return torch.zeros(0, dtype=torch.bool)
+
+    fired = trace[:live] if trace.numel() >= live else torch.zeros(live, dtype=torch.bool)
+    reached = node_activation.abs() > 0
+    frontier = (~fired) & reached[mesh.src[:live]] & mesh.alive_e[:live]
+    if not bool(frontier.any()):
+        return (~fired) & mesh.alive_e[:live]
+    return frontier
+
+
 def applyLearning(
     mesh,
     trace: Tensor,
@@ -54,6 +85,7 @@ def applyLearning(
     confidence: float,
     hyper: HazeHyper,
     reverse: bool = False,
+    mask: Tensor | None = None,
 ) -> LearnResult:
     """Moves every edge in the trace by epsilon times the gap between reward and confidence.
 
@@ -61,6 +93,12 @@ def applyLearning(
     the mesh stops adjusting what it already reliably knows. Selection is by `torch.where` over
     the full edge tensors rather than boolean indexing, which allocates and forces a device
     synchronization; see specs/learning.md.
+
+    A reverse pass applies a definite positive push instead, because on a reverse pass there was
+    no answer and so nothing a reward could be compared against. Deriving its magnitude from
+    `reward - confidence` made it exactly zero in the only situation it exists for: no signal
+    reached the motors, so confidence was 0 and the caller had no outcome to report but 0, and
+    the update that was supposed to reopen a path silently did nothing at all.
     """
     ensureRewardFinite(reward, confidence)
 
@@ -70,12 +108,15 @@ def applyLearning(
 
     span = slice(0, live)
     fired = trace[:live] if trace.numel() >= live else torch.zeros(live, dtype=torch.bool)
-    mask = (~fired if reverse else fired) & mesh.alive_e[span]
+    if mask is None:
+        mask = (~fired if reverse else fired) & mesh.alive_e[span]
+    else:
+        mask = mask[:live] & mesh.alive_e[span]
     updated = int(mask.sum())
     if updated == 0:
         return LearnResult(reward=reward, confidence=confidence, reverse=reverse)
 
-    signed = float(reward) - float(confidence)
+    signed = 1.0 if reverse else float(reward) - float(confidence)
     delta = mesh.epsilon[span] * signed
     zero = torch.zeros_like(delta)
 
@@ -271,16 +312,3 @@ def applyCreditedLearning(
         confidence=float(confidence),
         mean_delta=float(moved.sum() / max(updated, 1)),
     )
-
-
-def calcPruneMask(mesh, hyper: HazeHyper) -> Tensor:
-    """Returns which live edges have fallen to or below the pruning threshold in magnitude.
-
-    Magnitude, not value: a useless edge is one near zero, while a strongly negative edge is a
-    strongly inhibitory one and carries as much information as a strongly positive one. Testing
-    the signed value would delete every inhibitory edge the moment it was created.
-    """
-    live = mesh.counts.edges
-    if live == 0:
-        return torch.zeros(0, dtype=torch.bool)
-    return mesh.alive_e[:live] & (mesh.strength[:live].abs() <= hyper.prune_threshold)

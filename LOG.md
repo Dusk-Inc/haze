@@ -251,3 +251,60 @@ majority the representation does not move (0.82 → 0.79) and the mesh extracts 
 still worth 0.79. So majority is a readout failure and not a representational one, and it is the
 one place a better rule still has something to collect. Parity does not move because there is
 nothing there to move.
+
+## Wiring growth, pruning, and the trainer — and what that turned up
+
+The auditor, growth, pruning, and the trainer loop are now built and wired: `Auditor` holds the
+rolling windows, `calcGrowthPlan`/`applyGrowth` size and apply a plan, `applyPrune` removes dead
+edges and rescues what that strands, and `Trainer` drives observe → answer → score → learn →
+audit. With restructuring disabled the trainer reproduces hand-driven training exactly, which is
+the check that it adds nothing of its own.
+
+Building it surfaced three defects that mattered more than the feature.
+
+**The readout was misreading inhibition as silence.** `ensureSignalReached` tested whether motor
+activation summed above zero. That was a correct test for "nothing arrived" only while activation
+was non-negative; once Stage 4 made strengths signed, a net-inhibited motor set — an ordinary
+outcome — read as a dead mesh. Measured, **70 of 91** apparent failures were answers being thrown
+away. Fixing that one comparison took held-out copy accuracy from 0.86 to **0.95** and its worst
+seed from **0.47 to 0.84**.
+
+That is the answer to the seed-variance question. It was never a fragile initialization: it was one
+comparison that had stopped being valid two stages earlier, and the seeds it hit hardest were
+simply the ones whose meshes leaned most inhibitory.
+
+**Reverse learning had never once moved an edge.** Its delta was `epsilon · (reward − confidence)`,
+and on a reverse pass no signal reached the motors, so confidence was 0 and the caller had nothing
+to report but reward 0. The product was exactly zero, every time, since the rewrite began.
+
+Giving it a real magnitude then showed it does not earn its place. With the readout fixed, genuine
+silences are 0.4% of observations, and at that rate skipping them beats every intervention: 0.95
+skipping, 0.74 strengthening all unfired edges, 0.66 strengthening only the wavefront. A reverse
+pass moves ~170 edges at once, so a handful of firings flattens what was learned. `relearn_limit`
+now defaults to 0. The mechanism stays tested and reachable, because a mesh that truly cannot reach
+its motors has no other way back and one task family is not a proof.
+
+**Both restructuring triggers were set at values that fire on a healthy mesh.** `audit_window = 10`
+is too few observations to estimate an error rate and let growth fire every ten steps — a 400-step
+run added 253 neurons and pruned 5089 edges while ending at chance. And `growth_threshold = 0.5` is
+exactly the error rate of an untrained mesh on a two-label task, so growth fired on the first full
+window of every run; restructuring mid-learning cost one seed 0.95 → 0.46. Pruning also had to be
+gated on the audit's verdict rather than its cadence: the removal is not what hurts, the repair is,
+since rescuing stranded neurons with fresh random edges injects noise into a converged mesh.
+
+### Growth does nothing on these tasks, and that is the expected result
+
+With the triggers corrected, restructuring is exactly neutral — identical results live and
+disabled. That is correct rather than disappointing. The matched probe says the terminus already
+carries 0.80–0.82 of the available information at initialization, so this task family is not
+capacity-limited, and growth answers a capacity limit. A task that cannot pose the problem cannot
+demonstrate the solution; it can only show the cost of applying it anyway, which is what the two
+regressions above measured. Demonstrating growth needs a task whose ceiling moves with mesh size,
+and that is outstanding.
+
+### Where copy now stands
+
+Held-out greedy accuracy on 200 fresh rows, seeds 1-6: copy **0.95** (worst seed 0.84), majority
+0.65, against probe bounds of 0.80 and 0.81. Copy is now above its untrained bound on every seed,
+which the trained-mesh probe explains — the mesh reshapes its representation toward that task.
+Majority still does not, and remains the open readout gap.

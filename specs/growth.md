@@ -18,6 +18,45 @@ added separately and on demand, driven by input width and label count rather tha
 **Then** growth is planned; otherwise the mesh is left alone.
 
 Requiring a full window is what keeps a single unlucky observation from restructuring the network.
+The window is also the cadence — the trainer audits once per window, so it bounds how often the
+mesh may restructure at all. At the inherited width of 10 that let growth fire every ten steps: a
+400-step run added 253 neurons and pruned 5089 edges while ending at chance, because the mesh was
+being rebuilt faster than anything could be learned on it.
+
+### The threshold sits above chance, not at it
+
+**Given** an untrained mesh answering a two-label task
+**When** its first window is scored
+**Then** its error rate is about 0.5, and that must not be enough to trigger growth.
+
+A threshold at chance cannot distinguish *too small to solve this* from *has not learned it yet*,
+which are exactly the two things the trigger exists to tell apart. At the inherited 0.5, growth
+fired on the first full window of every run and restructuring a mesh mid-learning cost one seed
+its entire result — held-out copy accuracy 0.95 down to 0.46.
+
+### Restructuring is a response to failure, not routine maintenance
+
+**Given** an audit whose verdict is that the mesh is performing
+**When** the trainer restructures
+**Then** it does nothing at all — neither growth nor pruning runs.
+
+Pruning is gated on the same verdict as growth, which is not obvious: a dead edge is dead however
+well the mesh is doing, so running pruning on the audit's cadence reads as free housekeeping. It
+is not. Pruning strands neurons, the orphan rescue rewires them at fresh random strengths, and
+doing that to a converged mesh injects noise into a working solution — measured, held-out copy
+fell from 0.95 to 0.85 and one seed from 0.95 to 0.46.
+
+### Growth has not been shown to help, and that is expected
+
+On the binary task family the model is currently measured against, restructuring is exactly
+neutral: it never triggers, and results are identical with it live and with it disabled. This is
+the correct outcome rather than a disappointing one. The matched probe reports the terminus
+already carrying 0.80–0.82 of the available information at initialization, so these tasks are not
+capacity-limited, and growth is the answer to a capacity limit. A task family that cannot pose the
+problem cannot demonstrate the solution; all it can show is the cost of applying it anyway, which
+is what the two measurements above are.
+
+Demonstrating growth needs a task whose ceiling actually moves with mesh size. That is outstanding.
 
 ### Growth amount scales with error and uncertainty together
 

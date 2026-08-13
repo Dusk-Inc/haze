@@ -19,6 +19,7 @@ from ..functions.learning import (
     applyLearning,
     calcMotorSeeds,
     calcNeuronCredit,
+    calcRecoveryMask,
     calcRewardAdvantage,
     switchMotorChoice,
 )
@@ -177,9 +178,23 @@ class Haze(nn.Module, PyTorchModelHubMixin):
         confidence = self.calcConfidenceAggregate()
         eligibility = torch.zeros(live, dtype=self.mesh.dtype)
 
-        if reverse or not self.config.hyper.credit_assignment or not self._chosen:
+        if reverse:
+            activation = torch.zeros(int(self.mesh.kind.numel()), dtype=self.mesh.dtype)
+            for state in self._observations.values():
+                activation += state.toNodeActivation()
             return applyLearning(
-                self.mesh, trace, reward, confidence, self.config.hyper, reverse=reverse
+                self.mesh,
+                trace,
+                reward,
+                confidence,
+                self.config.hyper,
+                reverse=True,
+                mask=calcRecoveryMask(self.mesh, activation, trace),
+            )
+
+        if not self.config.hyper.credit_assignment or not self._chosen:
+            return applyLearning(
+                self.mesh, trace, reward, confidence, self.config.hyper
             )
 
         gain = calcRewardAdvantage(self.mesh, reward, self.config.hyper)

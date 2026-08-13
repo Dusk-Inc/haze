@@ -74,20 +74,53 @@ constant task forever. Applies only while learning; `eval()` always answers gree
 PRUNE_THRESHOLD = 0.2
 """An edge at or below this strength is removed. See specs/pruning.md."""
 
-GROWTH_RATE = 0.01
-"""Weighting between error rate and uncertainty when sizing a growth plan."""
+GROWTH_RATE = 0.1
+"""Share of a population added when it grows, before error and uncertainty scale it.
 
-GROWTH_THRESHOLD = 0.5
-"""Error rate above which growth is planned, once the audit windows are full."""
+Proportional rather than a fixed count, so growth stays meaningful as the mesh gets larger
+instead of becoming a rounding error. The inherited value was 0.01 and its docstring described
+a weighting no code implemented; this is the first version that both means something and is
+read. See specs/growth.md.
+"""
 
-AUDIT_WINDOW = 10
-"""Number of recent observations the auditor considers before it will plan growth."""
+GROWTH_THRESHOLD = 0.6
+"""Error rate above which growth is planned, once the audit windows are full.
+
+Above chance rather than at it. The inherited 0.5 is exactly the error rate of an untrained mesh
+on a two-label task, so growth fired on the first full window of every run — before the mesh had
+any chance to learn — and restructuring a mesh mid-learning cost one seed its whole result, 0.95
+down to 0.46. A threshold at chance cannot distinguish "too small to solve this" from "has not
+learned it yet", which are the two things the trigger exists to tell apart.
+"""
+
+AUDIT_WINDOW = 100
+"""Number of recent observations the auditor considers before it will plan growth.
+
+Also the cadence: the trainer audits once per window, so this is how often the mesh may
+restructure. The inherited value of 10 is too few observations to estimate an error rate from
+and, worse, let growth fire every ten steps — measured, a 400-step run added 253 neurons and
+pruned 5089 edges while ending at chance, because the mesh was rebuilt faster than it could
+learn anything on it. It also gives an edge crossing zero between excitation and inhibition
+time to get there before a prune pass reads its magnitude. See specs/growth.md.
+"""
 
 MAX_STEPS = 32
 """Safety cap on propagation hops. Termination normally comes from an empty wavefront."""
 
-RELEARN_LIMIT = 100
-"""Attempts the recovery loop makes to open a path when no signal reaches the motors."""
+RELEARN_LIMIT = 0
+"""Attempts the recovery loop makes to open a path when no signal reaches the motors.
+
+Zero, because recovery was measured and is worse than doing nothing. Reverse learning was
+designed against a symptom that was mostly a defect elsewhere: 70 of 91 apparent failures were
+motors that had received signal and been net-inhibited, which the readout misread as silence.
+Once that was fixed, genuine failures fell to 0.4% of observations, and every form of
+intervention tried cost more than it saved — held-out copy accuracy 0.95 skipping the
+observation, 0.74 strengthening every unfired edge, 0.66 strengthening only the wavefront.
+
+The mechanism is kept and tested rather than deleted, because a mesh that truly cannot reach its
+motors has no other way back, and this default is a measurement on one task family rather than a
+proof. See specs/learning.md.
+"""
 
 DEFAULT_NEXUS_SIZE = 64
 """Interneurons the nexus mesh starts with."""

@@ -7,7 +7,8 @@ import torch
 
 from haze import makeHaze
 from haze.errors import InvalidRewardError, SignalRangeError
-from haze.functions.learning import applyLearning, calcConfidenceEntropy, calcPruneMask
+from haze.functions.learning import applyLearning, calcConfidenceEntropy
+from haze.functions.prune import calcPruneMask
 from haze.functions.propagate import flowSignalPass, flowSignalPassReference
 from haze.modules.decoders import ArgMax, Regressor, SoftMax
 from haze.modules.encoders import NumericEncoder, toSignalBand

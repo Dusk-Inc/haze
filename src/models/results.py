@@ -79,6 +79,12 @@ class TrainReport(BaseModel):
     rewards: list[float] = Field(default_factory=list)
     grew: int = 0
     pruned: int = 0
+    lost: int = 0
+    """Observations the mesh could not answer at all, so they carry no reward.
+
+    Reported rather than folded into the reward as a zero, which would read as "answered
+    wrongly" and quietly understate accuracy by however often the mesh went silent.
+    """
 
     def calcRewardMeanLast(self, n: int) -> float:
         """Returns the mean reward over the last n steps, or over all steps if fewer ran."""

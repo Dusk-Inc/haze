@@ -31,8 +31,13 @@ class Decoder:
 
         Distinct from answering wrongly: it means the mesh has not connected its sensors to its
         motors, which is what drives reverse learning.
+
+        Tested on magnitude, because once edges may inhibit, a motor set can carry real evidence
+        and still sum to a negative number. Testing the signed sum conflates *silent* with *net
+        inhibited* and throws away a perfectly good answer: measured across six runs, 70 of 91
+        reported failures were motors that had received signal and been voted down.
         """
-        if states.numel() == 0 or float(states.sum()) <= 0:
+        if states.numel() == 0 or float(states.abs().sum()) <= 0:
             raise SignalDidNotReachMotorsError(
                 f"no active motor of decoder {self.key!r} received signal; the mesh has not "
                 "connected its sensors to its motors"

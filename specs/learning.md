@@ -85,13 +85,54 @@ The trace is the `fired` tensor from propagation, reduced across lanes. Edges be
 slack slots are excluded by the alive mask — the prior engine's failure to do this meant orphaned
 slots from pruned edges were reverse-learned on every reverse pass, forever.
 
-### Reverse learning inverts the mask
+### Signal is judged to have arrived by magnitude, not by sum
 
-**Given** a prediction in which no signal reached the motors
-**When** the engine attempts recovery
-**Then** it applies the update to the complement of the fired trace, strengthening the edges that
-did *not* carry signal, so that a mesh which has failed to connect its sensors to its motors can
-open a path.
+**Given** motor activation that is net negative because inhibition outweighed excitation
+**When** the decoder checks whether signal reached it
+**Then** it answers from that activation, because evidence arrived.
+
+Testing the signed sum conflates *silent* with *net inhibited*, and once edges may inhibit, the
+second is an ordinary outcome rather than a failure. Measured across six runs of 800 observations,
+**70 of 91** reported "no signal reached the motors" failures were motors that had received signal
+and been voted down. Each was an answer thrown away and an observation not learned from; fixing
+the test alone took held-out accuracy on copy from 0.86 to **0.95**, and its worst seed from 0.47
+to 0.84.
+
+Confidence is computed over magnitudes for the same reason. On signed activation the previous form
+reported total certainty for any motor set summing positive and total uncertainty for any set
+summing negative, which measures nothing and feeds the growth trigger.
+
+### Reverse learning is available, and off by default
+
+**Given** a prediction in which no signal reached the motors at all
+**When** `relearn_limit` is greater than zero
+**Then** the engine strengthens unfired edges to reopen a path; at the default of zero it does
+nothing and the caller skips the observation.
+
+This mechanism was designed against a symptom that was mostly the defect above. Once that was
+fixed, genuine silences fell to **0.4%** of observations, and at that frequency every form of
+intervention measured worse than leaving them alone:
+
+| handling of an unanswerable observation | copy | worst seed |
+|---|---|---|
+| **skip it** | **0.95** | **0.84** |
+| strengthen every unfired edge | 0.74 | 0.45 |
+| strengthen only the wavefront's own edges | 0.66 | 0.47 |
+
+The reason is blunt force: a reverse pass moves on the order of a hundred and seventy edges at
+once, so firing it a handful of times across a run is enough to flatten what the mesh had learned.
+Restricting it to the wavefront — the unfired edges leaving neurons the signal actually reached,
+which are the only ones that can extend reachability — is better targeted and still worse, because
+the surviving damage outweighs the rare recovery.
+
+It is kept, tested, and reachable rather than deleted, because a mesh that genuinely cannot reach
+its motors has no other way back, and a default set from one task family is a measurement rather
+than a proof.
+
+Worth recording that the mechanism did nothing at all before this: the update was
+`epsilon · (reward − confidence)`, and on a reverse pass no signal reached the motors, so
+confidence was 0 and the caller had no outcome to report but 0. The delta was exactly zero. The
+recovery path had never once moved an edge.
 
 ### Learning is disabled in eval mode
 
