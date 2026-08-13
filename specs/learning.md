@@ -236,6 +236,24 @@ a ceiling on the finished system. It is not, and a gap below it is the diagnosti
 be — the information is present at initialization and the rule is failing to extract it — while a
 result above it is not a contradiction and not an error.
 
+Probing the same mesh before and after 800 observations, over seeds 1–4, says how much of each
+task's outcome is representation and how much is readout:
+
+| task | probe on a fresh mesh | probe on the trained mesh | shift |
+|---|---|---|---|
+| constant | 1.00 | 1.00 | +0.00 |
+| copy | 0.81 | **0.99** | **+0.18** |
+| majority | 0.82 | 0.79 | −0.03 |
+| parity | 0.52 | 0.51 | −0.01 |
+
+Copy and majority fail — and succeed — for different reasons, which no single number was going to
+show. On copy the mesh **reshapes its own representation** toward the task, and that is why its
+achieved 0.86 exceeds the untrained bound of 0.80 rather than contradicting it. On majority the
+representation does not move at all, and 0.60 is extracted from information that stays worth 0.79.
+Majority is therefore a readout failure and not a representational one, and it is the one place a
+better rule still has something to collect. Parity does not move because there is nothing there to
+move: its bound is chance before and after.
+
 Two related traps in the same instrument, both hit and both now closed: the probe scored on its own
 training data with signed unbounded weights and a bias term the mesh has no equivalent of, which
 inflated copy to 0.91 and majority to 0.98; and it took `strength_lower` as the readout's floor

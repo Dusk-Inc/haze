@@ -243,3 +243,11 @@ instability appears as majority at 0.04 on one seed. Declining to learn is the s
 
 Majority remains the clearest gap: 0.60 achieved against a bound of 0.81. Parity's bound is chance,
 so it is representation-limited and no rule change reaches it.
+
+Probing the same mesh before and after training separates copy from majority for the first time.
+On copy the mesh reshapes its own representation toward the task — the probe rises 0.81 → 0.99 —
+which is why achieved 0.86 exceeds the untrained bound of 0.80 rather than contradicting it. On
+majority the representation does not move (0.82 → 0.79) and the mesh extracts 0.60 from information
+still worth 0.79. So majority is a readout failure and not a representational one, and it is the
+one place a better rule still has something to collect. Parity does not move because there is
+nothing there to move.
