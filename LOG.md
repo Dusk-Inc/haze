@@ -486,18 +486,33 @@ reward per bucket took two labels from 5/8 to 7/8 seeds learning.
 
 ### Remedies measured
 
-| arm | k=3 | k=9 |
-|---|---|---|
-| shipped, no pruning | 0.59 | 0.46 |
-| shipped, pruning on | 0.66 | **0.58** |
-| prune at the conduction floor (recycle mute edges) | 0.44 | 0.52 |
-| **`strength_lower` at the conduction floor 0.55** | **0.77** | 0.47 |
+| arm | k=3 (4 seeds) | k=3 (8 seeds) | k=9 (8 seeds) |
+|---|---|---|---|
+| shipped, no pruning | 0.59 | 0.63 | 0.48 |
+| shipped, pruning on | 0.66 | — | **0.58** |
+| prune at the conduction floor (recycle mute edges) | 0.44 | — | 0.52 |
+| **`strength_lower` at the conduction floor 0.55** | 0.77 | **0.68** | 0.46 |
 
-The floor gives three labels 0.77 with **two of four seeds exact at 1.00** — the first perfect runs
-on this task — and the highest reach of any arm. It does not convert at nine labels: conduction is
-necessary and not sufficient. Recycling mute edges, the fix argued for most confidently, measures
-*worse* than doing nothing at three labels — it destroys learned structure faster than it restores
-conduction.
+**The 0.77 was a four-seed draw and does not hold.** On eight seeds the floor gives 0.68 against
+0.63, with **3/8 seeds learning in both arms** — it does not win more often, its wins are better
+(1.00, 1.00, 0.86 against 0.86, 0.79, 0.77). Recording the correction rather than the corrected
+number alone, because the error is the one this same entry criticises two sections above: a
+four-seed mean of a bimodal outcome is a coin flip, and I published one within the hour.
+
+It does not convert at nine labels at all: conduction is necessary and not sufficient. Recycling
+mute edges, the fix argued for most confidently, measures *worse* than doing nothing at three
+labels — it destroys learned structure faster than it restores conduction.
+
+**The step-size control passes.** Narrowing strengths to `[0.55, 0.9]` also shrinks the dynamic
+range, so the shipped rails were re-run at the matched `epsilon` of 0.044 and below: they reach
+0.52 against the floor's 0.68. The gain is not a smaller step.
+
+**Conduction and learning trade off under three separate mechanisms**, which outlasts any of the
+individual arms. Lowering `epsilon` on the shipped rails takes reach 0.66 → 0.93 → 0.98 at
+0.100 / 0.025 / 0.010 while accuracy falls 0.63 → 0.53 → 0.41. The inherited rule holds reach at
+1.00 and never learns. Both buy conduction and pay everything for it. The strength floor is the
+only mechanism measured that improves both at once, which is what keeps it interesting at an effect
+size this small.
 
 A floor and a prune threshold cannot both be used: `ensureHyperCoherent` requires
 `prune_threshold > strength_lower`, so an edge clamped to a conduction floor sits permanently below

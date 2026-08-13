@@ -98,31 +98,38 @@ initial edge conducts at the *weakest* signal. Nothing checks that a *surviving*
 Making the dead band unrepresentable is the durable half of any fix here, independent of which
 dynamical remedy wins.
 
-**Prevention beats recycling, and is the best result so far.** Clamping `strength_lower` to 0.55 —
-above the single-hop conduction floor, so learning cannot push an edge mute — measured against the
-shipped configuration on `first-set` capped at `k`, 4 seeds, accuracy at step 1500:
+**Prevention beats recycling, modestly.** Clamping `strength_lower` to 0.55 — above the single-hop
+conduction floor, so learning cannot push an edge mute — measured on `first-set` capped at `k`,
+accuracy at step 1500. **Read the 8-seed column; the 4-seed one is kept only to show how far a
+small sample of a bimodal outcome can mislead:**
 
-| arm | k=3 | k=9 |
-|---|---|---|
-| shipped, no pruning | 0.59 | 0.46 |
-| shipped, pruning on | 0.66 | **0.58** |
-| prune at conduction floor 0.55 | 0.44 | 0.52 |
-| **floor 0.55, no pruning** | **0.77** | 0.47 |
+| arm | k=3 (4 seeds) | k=3 (8 seeds) | k=9 (8 seeds) |
+|---|---|---|---|
+| shipped, no pruning | 0.59 | 0.63 | 0.48 |
+| shipped, pruning on | 0.66 | — | 0.58 |
+| prune at conduction floor 0.55 | 0.44 | — | 0.52 |
+| **floor 0.55, no pruning** | 0.77 | **0.68** | 0.46 |
 
-At three labels the floor gives 0.77 with **two of four seeds exact at 1.00** — the first perfect
-runs recorded on this task — and the highest reach of any arm (0.80). At nine labels it holds
-conduction best (1.00 through step 500, 0.97 at step 1000, 0.77 at 1500) and still loses on
-accuracy to plain pruning. **Conduction is necessary and not sufficient:** keeping paths alive does
-not by itself solve selecting among nine answers.
+On eight seeds the floor gives 0.68 against 0.63, and **both arms have 3/8 seeds learning** — the
+floor does not win more often, its wins are simply better (1.00, 1.00, 0.86 against 0.86, 0.79,
+0.77). At nine labels it does nothing. It holds conduction longest of any arm (1.00 through step
+500, 0.97 at step 1000) and that does not convert: **conduction is necessary and not sufficient.**
 
 **A floor and a prune threshold cannot both be used.** `ensureHyperCoherent` requires
 `prune_threshold > strength_lower`, so an edge clamped to a conduction floor sits permanently below
 the prune threshold and is stripped on the next pass — measured, that configuration collapses to
 0.40 accuracy and 0.42 reach. The two remedies are structurally exclusive as the config is shaped.
 
-**Not yet excluded:** restricting strengths to `[0.55, 0.9]` also shrinks the dynamic range, which
-acts as a smaller effective learning rate. The reach column argues the gain is not purely that, but
-a matched-range control at reduced `epsilon` has not been run.
+**The step-size control passes.** Narrowing strengths to `[0.55, 0.9]` also shrinks the dynamic
+range, which acts as a smaller learning rate, so the shipped rails were re-run at the matched
+`epsilon` of 0.044 and below. They reach 0.52, against the floor's 0.68 — the gain is not step size.
+
+**Conduction and learning trade off under three separate mechanisms**, which is the more durable
+finding. Lowering `epsilon` on the shipped rails takes reach 0.66 → 0.93 → 0.98 at 0.100 / 0.025 /
+0.010 while accuracy falls 0.63 → 0.53 → 0.41. The inherited `reward - confidence` rule holds reach
+at 1.00 and never learns. Both buy conduction and pay everything for it. The strength floor is the
+only mechanism measured so far that improves both at once, which is why it stays interesting at an
+effect size this small.
 
 **Remaining candidates:** asymmetric rates so weakening is slower than strengthening; per-neuron
 outgoing normalisation so weakening one edge strengthens its siblings rather than draining the

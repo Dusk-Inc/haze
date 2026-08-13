@@ -261,8 +261,11 @@ there is not a mesh predicting the majority class — it is a mesh that only sti
 The existing coherence check validates `signal_lower * strength_init_upper**2`, i.e. that the
 *strongest initial* edge conducts at the *weakest* signal. Nothing checks that a *surviving* edge
 conducts, and the dead band is a representable state under the defaults. Whether to close it by
-raising `strength_lower` to the conduction floor is a measured trade rather than a cleanup — it
-takes three labels from 0.59 to 0.77 and does not help at nine — and is tracked in ROADMAP.md.
+raising `strength_lower` to the conduction floor is a measured trade rather than a cleanup: on eight
+seeds it takes three labels from 0.63 to 0.68 — the same 3/8 seeds learning, with better wins rather
+than more of them — and does nothing at nine. The gain is not merely the smaller effective step a
+narrowed strength range implies, since the shipped rails at the matched `epsilon` reach only 0.52.
+Tracked in ROADMAP.md.
 
 ## Performance crossover
 
