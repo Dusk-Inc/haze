@@ -1,0 +1,15 @@
+{
+    "name": "haze",
+    "language": "python",
+    "type": "library",
+    "tasks": {
+        "build": "python -m compileall src",
+        "test": "python -m pytest src/tests -q -m 'not slow'",
+        "add": "python -m pip install -e /haze",
+        "install": "python -m pip install -e .[dev]",
+        "uninstall": "python -m pip uninstall -y haze",
+        "publish": "python -m build && python -m twine upload dist/*",
+        "run": "python main.py"
+    },
+    "scopes": []
+}

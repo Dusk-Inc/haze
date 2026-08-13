@@ -1,2 +1,9 @@
 /app/core
 /.vscode
+/runs
+/dist
+/build
+*.egg-info
+__pycache__/
+.pytest_cache/
+.hypothesis/

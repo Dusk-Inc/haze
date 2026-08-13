@@ -1,0 +1,46 @@
+[project]
+name = "haze"
+version = "0.2.0"
+description = "A continuously learning, self-organizing neural mesh with forward-only learning."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+dependencies = [
+    "torch>=2.4",
+    "safetensors>=0.4",
+    "huggingface_hub>=0.25",
+    "pydantic>=2.7",
+    "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+text = ["sentence-transformers>=3.0"]
+image = ["pillow>=10", "timm>=1.0"]
+dev = ["pytest>=8", "pytest-benchmark>=4", "hypothesis>=6", "build", "twine"]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.package-dir]
+"haze" = "src"
+
+[tool.setuptools]
+packages = [
+    "haze",
+    "haze.tokens",
+    "haze.models",
+    "haze.interfaces",
+    "haze.modules",
+    "haze.modules.encoders",
+    "haze.modules.decoders",
+    "haze.functions",
+    "haze.errors",
+    "haze.other",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["src/tests"]
+markers = [
+    "slow: long-running soak, sweep, and benchmark tests excluded from the default gate",
+]
