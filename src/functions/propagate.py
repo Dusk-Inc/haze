@@ -23,6 +23,7 @@ class SignalState:
     plen: Tensor
     fired: Tensor
     motor_acc: Tensor
+    eligibility: Tensor
     hops: int = 0
     reached: bool = False
     per_lane_hops: list[int] = field(default_factory=list)
@@ -31,6 +32,26 @@ class SignalState:
     def lanes(self) -> int:
         """Returns how many independent signal streams this state carries."""
         return int(self.val.shape[0])
+
+    def toEdgeEligibility(self, lane_weights: Tensor | None = None) -> Tensor:
+        """Returns how much signal each edge carried, weighted by how much its lane mattered.
+
+        This is the eligibility half of reward-modulated learning: an edge that carried more of
+        the signal that produced an answer is more responsible for that answer. Pooling lanes
+        before weighting them would lose exactly what distinguishes one input feature from
+        another, since a lane is a feature. See specs/learning.md.
+        """
+        if lane_weights is None:
+            return self.eligibility.sum(0)
+        return (self.eligibility * lane_weights.unsqueeze(1)).sum(0)
+
+    def calcLaneShare(self, motor: int) -> Tensor:
+        """Returns each lane's share of the activation arriving at one motor."""
+        arrived = self.motor_acc[:, motor]
+        total = arrived.sum()
+        if float(total) <= 0:
+            return torch.full((self.lanes,), 1.0 / max(self.lanes, 1), dtype=arrived.dtype)
+        return arrived / total
 
     def toEdgeTrace(self) -> Tensor:
         """Returns which edges carried signal, reduced across lanes.
@@ -49,6 +70,7 @@ def makeSignalState(lanes: int, neurons: int, edges: int, dtype: torch.dtype) ->
         plen=torch.zeros(lanes, neurons, dtype=dtype),
         fired=torch.zeros(lanes, edges, dtype=torch.bool),
         motor_acc=torch.zeros(lanes, neurons, dtype=dtype),
+        eligibility=torch.zeros(lanes, edges, dtype=dtype),
     )
 
 
@@ -105,6 +127,8 @@ def flowSignalStep(
     arrived_plen = torch.zeros_like(state.val).index_add_(1, dst, contrib * e_plen)
     weight = arrived.clamp_min(1e-12)
 
+    state.eligibility[:, : contrib.shape[1]] += contrib
+
     state.motor_acc = state.motor_acc + torch.where(
         is_motor.unsqueeze(0), arrived, torch.zeros_like(arrived)
     )
@@ -153,6 +177,7 @@ def flowSignalPass(
         return state
 
     state.fired = state.fired[:, live]
+    state.eligibility = state.eligibility[:, live]
     for _ in range(hyper.max_steps):
         passed = flowSignalStep(
             state, src, dst, strength, log_str, alive_e, mesh.active, is_motor, is_inter, hyper

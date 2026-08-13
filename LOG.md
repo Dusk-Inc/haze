@@ -131,10 +131,36 @@ own measured baseline is flat at chance with three of six seeds failing to reach
 It also explains that baseline, which the random-bit demo could not: the demo's chance and ceiling
 are both 0.5, so it could never have distinguished a learning engine from a broken one.
 
-Relieving this means changing the learning rule — weighting each edge's update by its own
-contribution to the chosen answer against the correct one — which changes what Haze is rather than
-how fast it runs. It is therefore recorded here for an explicit decision rather than folded into
-the vectorization silently.
+### Credited learning, and where it gets to
+
+On that finding the learning rule was changed deliberately rather than silently, keeping it
+forward-only: an edge now moves by three factors multiplied — how much signal it carried, how much
+credit reaches the neuron it fed, and how far the reward diverged from the confidence. Credit is
+seeded at the motor the decoder actually chose, since `learn` is told a reward and never the
+correct label, and spread backward along the fired edges by one extra scatter per hop. Full
+description and measurements in `specs/learning.md`.
+
+It resolves what it was aimed at. The constant task — which needs only a bias — goes from 0.00 to
+0.99–1.00 across seeds where the uniform rule scored 0.00 at every learning rate tried.
+
+It does not yet resolve tasks whose answer must depend on the input: copy, majority, and parity all
+remain at chance. Two measured structural facts bound that, and neither is a learning-rule
+question:
+
+- **A third of the signal band cannot propagate.** A feature at the band floor of 0.1 attenuates to
+  at most 0.09 over one edge and never clears the 0.3 edge gate, so a feature at its minimum fires
+  nothing and an all-minimum observation yields no answer at all. The band and the gate were never
+  reconciled with each other.
+- **The mesh forms no input-specific representation.** 55–83% of all edges fire on any observation,
+  and different inputs' fired sets overlap by a Jaccard of 0.67–0.83. A sweep over both thresholds
+  traded density against depth without finding above-chance discrimination anywhere; sparser
+  settings starved the motors rather than making the representation selective.
+
+The likely cause is the wiring rather than the rule: every sensor connects to **every** nexus
+interneuron, so each feature excites the same population identically and there is no
+feature-specific pathway for learning to strengthen differentially. Changing that means changing
+the topology, which is a further architectural decision and is left open rather than taken
+unilaterally.
 
 ### Conventions
 

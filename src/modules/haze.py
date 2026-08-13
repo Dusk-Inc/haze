@@ -14,7 +14,12 @@ from ..errors import (
     PortNotFoundError,
     SignalDidNotReachMotorsError,
 )
-from ..functions.learning import applyLearning
+from ..functions.learning import (
+    applyCreditedLearning,
+    applyLearning,
+    calcMotorSeeds,
+    calcNeuronCredit,
+)
 from ..functions.propagate import flowSignalPass
 from ..functions.serialize import (
     ensureCheckpointCoherent,
@@ -53,6 +58,7 @@ class Haze(nn.Module, PyTorchModelHubMixin):
         self.ports = PortRegistry(self.mesh)
         self.learning_enabled = True
         self._observations: dict[str, Any] = {}
+        self._chosen: dict[str, int] = {}
 
         if config.counts.nexus == 0 and config.counts.terminus == 0:
             self.mesh.buildMesh(config.nexus_size, config.terminus_size)
@@ -145,8 +151,10 @@ class Haze(nn.Module, PyTorchModelHubMixin):
             entry = self.ports.findLabels(key)
             motors = self.ports.findActiveMotorIds(key)
             states = activation[motors]
-            output.predictions[key] = [decoder.decodeMotors(states, entry)]
+            answer = decoder.decodeMotors(states, entry)
+            output.predictions[key] = [answer]
             output.confidence[key] = decoder.calcMotorConfidence(states, entry)
+            self._chosen[key] = int(motors[int(torch.argmax(states))])
         return output
 
     def learn(self, reward: float, reverse: bool = False) -> LearnResult:
@@ -155,14 +163,39 @@ class Haze(nn.Module, PyTorchModelHubMixin):
         if not self._observations:
             raise SignalDidNotReachMotorsError("learn was called before observe")
 
-        trace = torch.zeros(self.mesh.counts.edges, dtype=torch.bool)
+        live = self.mesh.counts.edges
+        trace = torch.zeros(live, dtype=torch.bool)
+        hops = 0
         for state in self._observations.values():
             edge_trace = state.toEdgeTrace()
             trace[: edge_trace.numel()] |= edge_trace
+            hops = max(hops, state.hops)
 
         confidence = self.calcConfidenceAggregate()
-        return applyLearning(
-            self.mesh, trace, reward, confidence, self.config.hyper, reverse=reverse
+        eligibility = torch.zeros(live, dtype=self.mesh.dtype)
+
+        if reverse or not self.config.hyper.credit_assignment or not self._chosen:
+            return applyLearning(
+                self.mesh, trace, reward, confidence, self.config.hyper, reverse=reverse
+            )
+
+        gain = float(reward) - float(confidence)
+        seeds: dict[int, float] = {}
+        for key, chosen in self._chosen.items():
+            motors = self.ports.findActiveMotorIds(key)
+            for motor, value in calcMotorSeeds(motors, chosen, gain).items():
+                seeds[motor] = seeds.get(motor, 0.0) + value
+
+        for state in self._observations.values():
+            shares = torch.zeros(state.lanes, dtype=self.mesh.dtype)
+            for chosen in self._chosen.values():
+                shares = shares + state.calcLaneShare(chosen)
+            weight = state.toEdgeEligibility(shares)
+            eligibility[: weight.numel()] += weight
+
+        credit = calcNeuronCredit(self.mesh, trace, seeds, hops)
+        return applyCreditedLearning(
+            self.mesh, trace, eligibility, credit, reward, confidence, self.config.hyper
         )
 
     def calcConfidenceAggregate(self) -> float:

@@ -68,6 +68,12 @@ class HazeHyper(BaseModel):
     relearn_limit: int = Field(default=defaults.RELEARN_LIMIT, ge=0)
     fanout_min: int = Field(default=defaults.FANOUT_MIN, ge=1)
     fanout_max: int = Field(default=defaults.FANOUT_MAX, ge=1)
+    credit_assignment: bool = True
+    """Whether an edge's update is weighted by its own contribution to the chosen answer.
+
+    False restores the inherited uniform rule, which cannot make one motor beat another and is
+    kept only so the difference can be measured. See specs/learning.md.
+    """
 
     @model_validator(mode="after")
     def ensureHyperCoherent(self) -> "HazeHyper":
