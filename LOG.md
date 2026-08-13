@@ -404,3 +404,126 @@ accuracy — which is the same work as the majority readout gap.
 
 `CodeBook` ships available and non-default, and one-hot stays the default, so the two remain
 comparable and this result can be re-tested against a better rule rather than re-derived.
+
+## Chasing the label cliff to its root: conduction collapse
+
+Nine measurements in one session, prompted by two questions: does the network actually grow new
+capacity when established behaviour goes stale, and was `reward − confidence` retired for a good
+reason. Both answers turned out to depend on a failure neither question was about.
+
+### Three root causes proposed, two refuted by the next measurement
+
+Recorded in order, because the pattern matters more than the conclusion: mechanisms reasoned about
+confidently kept being overturned by cheap experiments, and only the third survived contact.
+
+1. **"We stop training too early."** The advantage contrast falls as `1/k` while per-step noise
+   stays flat, so resolving it should cost `k²` more samples — 1,500 steps at two labels being
+   worth ~30,000 at nine. **Refuted:** out to 15,000 steps everything is settled by ~1,500 and then
+   nothing moves at all — accuracy, mean `|strength|` (0.51, mid-band), rail occupancy (0.17–0.30)
+   all static for the remaining 13,500. The drift is not small, it is zero, and no amount of
+   sampling resolves a contrast that is not there.
+2. **"The update cannot be made input-conditional."** Supported by supervision failing and by the
+   probe reading 0.81 where the mesh achieves 0.65. **Refuted:** the eligibility trace discriminates
+   at every label count. Same-label vs different-label cosine gap after training is +0.377 (k=2),
+   +0.364 (k=3), +0.249 (k=9), against +0.03 on a fresh mesh. Selectivity is learned and it works.
+3. **"Silence is absorbing."** Survives all nine.
+
+### The mechanism
+
+Training destroys the mesh's ability to conduct, one input at a time, and conduction does not come
+back. An input whose answer is usually wrong accumulates negative advantage on the edges it fires;
+those edges fall under the gate; a mute edge fires **no trace**, and every update is gated on a
+trace, so nothing can ever strengthen it again. The caller scores the silence as reward 0, which
+deepens the collapse for everything else.
+
+Share of 200 held-out inputs still reaching the motors, `first-set` capped at `k`, pruning off:
+
+| step | k=3 | k=9 |
+|---|---|---|
+| 0 | 1.00 | 1.00 |
+| 500 | 0.95 | 0.74 |
+| 1000 | 0.63 | 0.51 |
+| 1500 | 0.65 | 0.52 |
+
+Per-label at 1500, the majority class survives in every seed: `1.0,1.0,0.3 | 1.0,0.5,0.5 |
+1.0,0.0,0.0 | 1.0,0.0,0.0` at three labels, `1.0,0.0,0.0,0.0,0.0,0.0,0.0` in three of four at nine.
+
+**This re-reads the whole task suite.** The 0.51 plateau is not a mesh predicting the majority class
+— it is a mesh that only still conducts for it, scoring zero on the silence elsewhere. "Converges by
+1,500 steps" is the erosion completing. Supervision cannot help because a silent input has no trace
+to apply it to. The task-switch deaths are the same mechanism with every pathway turning negative at
+once.
+
+### It has a parameter-level cause
+
+Arriving value is `signal × prod(strengths) × geomean(strengths)`, so one hop costs roughly the
+*square* of a strength. Against `signal_threshold` 0.25 and a band topping at 0.9, an edge below
+**0.527** cannot conduct at any signal. `strength_lower` is 0.1 and `prune_threshold` is 0.2, so
+`(0.2, 0.527)` is a **dead band**: alive, above the prune threshold, and mute. `ensureNoOrphans`
+cannot see it (structurally connected), pruning cannot reach it (not weak enough). A settled mesh
+measures mean `|strength|` 0.51 — sitting on the floor. Now computable as
+`HazeHyper.calcConductionFloor` / `calcDeadBand`, and covered by `src/tests/test_conduction.py`.
+
+The existing coherence check validates that the *strongest initial* edge conducts at the *weakest*
+signal. Nothing checks that a *surviving* edge conducts.
+
+### The two learning rules fail in opposite directions
+
+`r − c ≡ (r − r̄) + (r̄ − c)` — the inherited signal is exactly today's advantage plus a bias of
+about +0.08. Head to head, 6 seeds: the inherited rule holds reach at **1.00 throughout** and never
+learns (by step 250 it answers one label for everything; 0.27 at three labels, below a majority
+guess, because it locks onto a minority label). The centred rule learns (0.27 → 0.66) and loses a
+third of its input space. **The bias was the entire conduction-preservation mechanism**, and no
+constant serves both roles: one big enough to hold conduction open is big enough to freeze the
+policy. Selection belongs to the reward; staying conductive is structural.
+
+Confidence remains unusable as the value estimate, but for a better reason than the one recorded
+when it was dropped: its correlation with reward **changes sign with label count** (+0.217 at three
+with a monotonic calibration curve, −0.08 at two, inverted at nine where the top confidence bucket
+scores 0.28 against 0.54 at the bottom). A uniform bias is fixable by calibration; a sign flip is
+not. A *state-dependent* baseline is still worth having — bucketing confidence and tracking mean
+reward per bucket took two labels from 5/8 to 7/8 seeds learning.
+
+### Remedies measured
+
+| arm | k=3 | k=9 |
+|---|---|---|
+| shipped, no pruning | 0.59 | 0.46 |
+| shipped, pruning on | 0.66 | **0.58** |
+| prune at the conduction floor (recycle mute edges) | 0.44 | 0.52 |
+| **`strength_lower` at the conduction floor 0.55** | **0.77** | 0.47 |
+
+The floor gives three labels 0.77 with **two of four seeds exact at 1.00** — the first perfect runs
+on this task — and the highest reach of any arm. It does not convert at nine labels: conduction is
+necessary and not sufficient. Recycling mute edges, the fix argued for most confidently, measures
+*worse* than doing nothing at three labels — it destroys learned structure faster than it restores
+conduction.
+
+A floor and a prune threshold cannot both be used: `ensureHyperCoherent` requires
+`prune_threshold > strength_lower`, so an edge clamped to a conduction floor sits permanently below
+the prune threshold and is stripped on the next pass (0.40 accuracy, 0.42 reach).
+
+### Corrections to earlier entries
+
+- **Severity was overstated by my own harness.** Every reach measurement above ran with pruning
+  disabled, because `applyPrune` is called from the trainer's `flowRestructure` and a harness driving
+  `learn()` directly never invokes it. Switching it on recovers reach 0.52→0.70 and accuracy
+  0.46→0.58 at nine labels. The erosion is real; "conduction never comes back" is only true with
+  pruning off.
+- **The label-cliff table was four seeds and the outcome is bimodal.** On twelve seeds two labels is
+  0.64 with 6/12 learning, not the 0.86 previously recorded. A run either learns or sits at the
+  majority rate; what falls with label count is the probability of the former.
+- **`calcCodeSeeds`'s docstring claimed the shared gain "is noise rather than bias."** The direction
+  is right, the magnitude is not: the per-pair contrast is `4·q^m·(1−q)`, which peaks at
+  `q = m/(m+1)` (0.89 for eight bits) and is 16× weaker than one-hot's at initialisation. That claim
+  was asserted without measurement; corrected in place.
+- **Reverse learning is worse than neutral.** With `relearn_limit=3`, reach at step 1500 falls from
+  0.65 to 0.39 (k=3) and 0.52 to 0.38 (k=9). It is driven from the observation's own wavefront —
+  the edges that still work — so it rescues the living. Defaulting it off was right for the wrong
+  reason.
+
+### Instruments added
+
+`calcConductionReach` and `calcReachByLabel` in `src/functions/score.py`. Accuracy hides this
+failure completely; none of it was visible until conduction was watched directly, and the per-label
+split is what makes it legible (the aggregate falls smoothly while whole labels drop to zero).

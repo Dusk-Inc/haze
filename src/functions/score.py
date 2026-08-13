@@ -6,6 +6,8 @@ from typing import Any, Callable, Sequence
 import torch
 from torch import Tensor
 
+from ..errors import SignalDidNotReachMotorsError
+
 Task = Callable[[Sequence[int]], Any]
 
 
@@ -86,6 +88,55 @@ def calcRewardMean(rewards: Sequence[float], window: int = 200) -> float:
         return 0.0
     tail = rewards[-window:] if window > 0 else list(rewards)
     return sum(tail) / len(tail)
+
+
+def calcConductionReach(
+    answer: Callable[[Sequence[int]], Any], rows: Sequence[Sequence[int]]
+) -> float:
+    """Returns the share of `rows` the mesh still answers at all, rather than answers correctly.
+
+    The measurement accuracy hides. A trained mesh does not merely answer its harder inputs wrongly
+    — it stops answering them, because learning drives their edges under the gate and a mute edge
+    fires no trace to recover on. Measured on `first-set`, this falls from 1.00 on a fresh mesh to
+    0.52 by step 1000, and the inputs that survive share one label: an accuracy of 0.51 there is
+    not a mesh predicting the majority class but a mesh that only still conducts for it.
+
+    Kept beside the probe because the two bound different things. The probe says what a readout
+    could extract; this says how much of the input space is still connected to a readout at all.
+    See specs/propagation.md.
+    """
+    if not rows:
+        return 0.0
+    reached = 0
+    for row in rows:
+        try:
+            answer(row)
+            reached += 1
+        except SignalDidNotReachMotorsError:
+            continue
+    return reached / len(rows)
+
+
+def calcReachByLabel(
+    answer: Callable[[Sequence[int]], Any], rows: Sequence[Sequence[int]], task: Task
+) -> dict[Any, float]:
+    """Returns conduction reach split by each row's correct label, worst-served label first.
+
+    The split is what makes the failure legible: the aggregate falls smoothly while the truth is
+    that whole labels drop to zero and the majority label stays at one.
+    """
+    total: dict[Any, int] = {}
+    reached: dict[Any, int] = {}
+    for row in rows:
+        want = task(row)
+        total[want] = total.get(want, 0) + 1
+        try:
+            answer(row)
+            reached[want] = reached.get(want, 0) + 1
+        except SignalDidNotReachMotorsError:
+            continue
+    shares = {want: reached.get(want, 0) / count for want, count in total.items()}
+    return dict(sorted(shares.items(), key=lambda pair: pair[1]))
 
 
 def fitReadoutProbe(

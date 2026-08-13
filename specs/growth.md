@@ -58,6 +58,46 @@ is what the two measurements above are.
 
 Demonstrating growth needs a task whose ceiling actually moves with mesh size. That is outstanding.
 
+### The trigger cannot see a capability that was working and stopped
+
+**Given** a mesh that learned a task and whose task then changed
+**When** the auditor runs
+**Then** it reports an error *level*, which cannot distinguish "never worked" from "used to work",
+so growth does not fire in response to the change.
+
+This is the case growth exists for — an established section stops paying — and the shipped trigger
+cannot express it. `calcErrorRate` reads one window against an absolute `growth_threshold`. Nothing
+compares recent performance to earlier performance, so a mesh falling from 0.95 to 0.65 is still
+under the 0.6 error bar and triggers nothing.
+
+Measured: train `copy(bit 0)` for 1,500 steps, switch the target to `copy(bit 3)`, 6 seeds.
+
+| mode | pre-switch | recovered | neurons grown |
+|---|---|---|---|
+| growth off | **0.99** | **0.25** | 0 |
+| growth on, absolute threshold (shipped) | 0.87 | 0.48 | 162 |
+| growth on, relative to recent best (prototype) | 0.71 | 0.59 | 213 |
+
+**Without growth the mesh does not adapt — it dies.** Three of six seeds end raising
+`SignalDidNotReachMotorsError`, and 0.25 is far below the 0.51 a constant guess scores. The switch
+turns every pathway negative at once, so the conduction collapse described in
+[propagation.md](propagation.md) takes the whole mesh rather than only its minority classes.
+
+Growth *does* fire — but on the death, not on the change: error only crosses 0.6 once the mesh is
+already failing badly, which is after the collapse has begun. It also fires during early training,
+where it interferes (pre-switch 0.99 → 0.87). Its one measured benefit is that **no seed dies in
+either growth arm**, so growth is currently working as life support against a conduction failure
+rather than as adaptation, which is why it looks useful after a switch and harmful during stable
+learning.
+
+A prototype trigger firing when recent accuracy drops below the best seen recovers best (0.59, two
+seeds at 0.93 and 0.79) and costs the most up front, because a drop-from-best detector also fires
+on ordinary early-training noise. It is a direction, not a fix.
+
+Growth is also **not localised**: `applyGrowth` enlarges the whole nexus and terminus population,
+and nothing represents which section failed, so new capacity cannot be aimed at it. Nor is anything
+done to protect the section that worked. See ROADMAP.md.
+
 ### Growth amount scales with error and uncertainty together
 
 **Given** an error rate and a confidence rate

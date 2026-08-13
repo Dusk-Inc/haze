@@ -270,9 +270,14 @@ def calcCodeSeeds(bit_motors: list[int], bits: Tensor, gain: float) -> dict[int,
     destroys. See specs/decoding.md.
 
     The pairs that were wrong and the pairs that were right receive the same signed gain, since a
-    scalar reward cannot say which bits were at fault. That is noise rather than bias: a bit whose
-    vote genuinely tracks the outcome accumulates a net push in the right direction, while the
-    others average out. It is what a one-hot decoder cannot do, where the dilution is systematic.
+    scalar reward cannot say which bits were at fault. The direction that leaves is correct — a bit
+    whose vote tracks the outcome accumulates the right way — but its **magnitude collapses**, which
+    an earlier version of this note asserted was fine without measuring it. With reward paid only
+    for a whole correct codeword the baseline is `q**m`, and the push separating a pair's correct
+    motor from its wrong one is `4 * q**m * (1 - q)`. That peaks at `q = m/(m+1)` — 0.89 for eight
+    bits — and falls away exponentially below it: at initialisation it is 0.008 against a one-hot
+    decoder's 0.125 at nine labels. The codebook only learns quickly once it has nearly solved the
+    problem, which is why it loses to one-hot at every label count above two. See specs/decoding.md.
     """
     seeds: dict[int, float] = {}
     for position, bit in enumerate(bits.tolist()):

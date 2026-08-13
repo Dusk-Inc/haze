@@ -228,6 +228,42 @@ Fan-out is therefore a configured knob with a wide default rather than a claim, 
 rescue built alongside it is kept on its own merits — pruning is allowed to disconnect a neuron,
 and something has to reconnect it.
 
+## An edge below the conduction floor is alive and mute
+
+**Given** an edge whose strength has fallen below what the gate admits
+**When** signal arrives at it
+**Then** nothing traverses it, and because nothing traverses it the edge fires no trace, so no
+subsequent update can reach it.
+
+A path's arriving value is its running product of strengths scaled by their geometric mean, so a
+uniform strength `s` over `n` hops arrives at `signal * s**(n+1)`. **One hop costs roughly the
+square of a strength, not the strength.** Inverting that against `signal_threshold` gives
+`HazeHyper.calcConductionFloor`, the weakest edge that carries the band's best signal:
+
+| hops | at signal 0.9 | at signal 0.4 |
+|---|---|---|
+| 1 | 0.527 | 0.791 |
+| 2 | 0.652 | 0.855 |
+| 3 | 0.726 | 0.889 |
+
+Under the shipped rails — `strength_lower` 0.1, `prune_threshold` 0.2, `strength_upper` 0.9 —
+this leaves a **dead band** at `(0.2, 0.527)`, reported by `HazeHyper.calcDeadBand`. An edge there
+is alive, above the prune threshold, and carries nothing. `ensureNoOrphans` cannot rescue it
+because it is structurally connected; pruning cannot remove it because it is not weak enough. It is
+an absorbing state, because every update is gated on a fired trace and a mute edge fires none.
+
+This is what `calcConductionReach` measures and what accuracy hides. Trained on `first-set` capped
+at nine labels with pruning off, the share of held-out inputs that reach the motors at all falls
+1.00 → 0.99 → 0.74 → 0.51 over steps 0/250/500/1000, and `calcReachByLabel` shows the survivors
+share one label: three of four seeds end at `1.0,0.0,0.0,0.0,0.0,0.0,0.0`. **An accuracy of 0.51
+there is not a mesh predicting the majority class — it is a mesh that only still conducts for it.**
+
+The existing coherence check validates `signal_lower * strength_init_upper**2`, i.e. that the
+*strongest initial* edge conducts at the *weakest* signal. Nothing checks that a *surviving* edge
+conducts, and the dead band is a representable state under the defaults. Whether to close it by
+raising `strength_lower` to the conduction floor is a measured trade rather than a cleanup — it
+takes three labels from 0.59 to 0.77 and does not help at nine — and is tracked in ROADMAP.md.
+
 ## Performance crossover
 
 Tensor dispatch overhead dominates at small N. The measured crossover — the network size below

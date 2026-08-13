@@ -107,6 +107,30 @@ class HazeHyper(BaseModel):
         """Returns the lowest strength an edge may hold, which inhibition puts below zero."""
         return -self.strength_upper if self.inhibitory_ratio > 0.0 else self.strength_lower
 
+    def calcConductionFloor(self, hops: int = 1) -> float:
+        """Returns the weakest uniform strength that still carries the band's best signal `hops` far.
+
+        A path's arriving value is its running product of strengths scaled by their geometric mean,
+        so a uniform strength `s` over `n` hops arrives at `signal * s**(n+1)` — one hop costs
+        roughly the square of a strength, not the strength. Inverting that against
+        `signal_threshold` gives the weakest edge that conducts at all, and it rises with depth.
+        """
+        return (self.signal_threshold / self.signal_upper) ** (1.0 / (max(hops, 1) + 1))
+
+    def calcDeadBand(self, hops: int = 1) -> tuple[float, float] | None:
+        """Returns the strength range in which an edge is alive, unprunable, and mute, if any.
+
+        An edge under `prune_threshold` is removed and rewired, so it recovers. An edge over the
+        conduction floor carries signal. Between the two it does neither: `ensureNoOrphans` cannot
+        see it because it is structurally connected, and pruning cannot reach it. Learning that
+        drives an edge into this range removes it from the mesh's behaviour permanently, because a
+        mute edge fires no trace and a trace is what every update is gated on.
+
+        Non-empty under the shipped defaults, where it spans (0.2, 0.527). See specs/propagation.md.
+        """
+        ceiling = min(self.calcConductionFloor(hops), self.strength_upper)
+        return (self.prune_threshold, ceiling) if ceiling > self.prune_threshold else None
+
     @model_validator(mode="after")
     def ensureHyperCoherent(self) -> "HazeHyper":
         """Rejects hyperparameter combinations that make a whole mechanism unreachable."""

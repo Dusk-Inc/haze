@@ -39,6 +39,35 @@ credit` already forms a covariance once the factor multiplying it is centred.
 Centring the **eligibility** as well was tried and is worse — copy 0.83 → 0.51 — because the
 product is then centred twice and the second centring only adds variance.
 
+**What centring cost, measured later.** The inherited signal decomposes exactly as
+`r − c ≡ (r − r̄) + (r̄ − c)`: today's advantage plus a bias measuring about +0.08. That bias was
+not only a defect. Run head to head on `first-set` capped at `k`, 6 seeds:
+
+| rule | reach 0 → 1500 | accuracy 0 → 1500 | share on one label |
+|---|---|---|---|
+| centred, k=3 | 1.00 → 0.69 | 0.27 → **0.66** | 0.84 |
+| inherited, k=3 | **1.00 → 1.00** | 0.27 → 0.27 | 1.00 |
+| centred, k=9 | 1.00 → 0.62 | 0.11 → **0.45** | 0.92 |
+| inherited, k=9 | **1.00 → 1.00** | 0.11 → 0.21 | 0.96 |
+
+The inherited rule never loses an input and never learns — by step 250 it answers one label for
+everything and never moves again, scoring 0.27 at three labels, *below* a majority guess, because
+it locks onto a minority label. The centred rule learns and pays for it in conduction. **The bias
+was the entire conduction-preservation mechanism**, and no constant serves both roles: one large
+enough to hold conduction open is large enough to freeze the policy. The two rules fail in opposite
+directions and neither is closer to correct. Selection belongs to the reward signal; staying
+conductive is a structural property and belongs in the strength rails — see specs/propagation.md.
+
+**Confidence is not a usable value estimate, for a different reason than recorded above.** The
+objection here was its positive mean. Measured since, its correlation with reward *changes sign
+with label count*: +0.217 at three labels with a cleanly monotonic calibration curve (0.555 rising
+to 0.971), −0.08 at two, and inverted at nine, where the top confidence bucket scores 0.28 against
+0.54 at the bottom — the mesh is most certain when it is most wrong. A uniform bias is fixable by
+calibration; a sign flip is not. But a **state-dependent** baseline is still worth having: bucketing
+confidence and tracking mean reward per bucket took two labels from 5/8 to 7/8 seeds learning
+(0.75 → 0.84). A critic predicting reward from terminus activation rather than from a one-number
+summary is the version worth building, and is tracked in ROADMAP.md.
+
 The baseline is seeded from the first reward rather than from zero or from an assumed 0.5. One
 sample is its own expectation, so the first advantage is exactly zero; seeding at zero would spend
 the whole warm-up applying the very push this removes, and seeding at 0.5 would assume a reward
@@ -330,37 +359,50 @@ is driven below chance.
 **Then** it extracts almost nothing, and past about nine labels it scores below chance.
 
 Measured on one task held fixed and coarsened only in its label count, with the majority class
-held at half the rows so chance stays 0.51 throughout:
+held at half the rows so chance stays 0.51 throughout. **Twelve seeds, which matters — the outcome
+is bimodal, so a four-seed mean is a draw from a coin flip rather than an estimate:**
 
-| labels | achieved | lift over chance |
+| labels | mean | seeds that learned (>0.60) |
 |---|---|---|
-| 2 | 0.86 | **+0.35** |
-| 3 | 0.59 | +0.08 |
-| 4 | 0.58 | +0.07 |
-| 6 | 0.57 | +0.06 |
-| 9 | 0.46 | **−0.05** |
+| 2 | 0.64 | 6/12 |
+| 3 | 0.59 | 3/12 |
+| 4 | 0.44 | 1/12 |
+| 6 | 0.49 | 2/12 |
+| 9 | 0.50 | 3/12 |
 
-The cliff is between two and three, not a gradual decay, and it is not capacity: the same task at
-two labels reaches 0.94–0.98 on the same mesh, and making the mesh *larger* makes nine labels
-worse rather than better (0.46 at a terminus of 32, 0.27 at 64).
+A run either learns or sits at the majority rate; almost nothing lands between. What falls with
+label count is the *probability of landing in the learning mode*, not the accuracy achieved. An
+earlier version of this section reported 0.86 at two labels from four seeds; on twelve it is 0.64.
 
-The reason is what a scalar reward can carry. Learning is told whether its answer was right, never
-what the right answer was. With two labels that is complete information — "not the one I chose"
-names the other one exactly, so the rival seed is precisely the correct corrective signal. With
-three or more it is ambiguous, and the seed spread across the rivals is right about at most one of
-them and wrong about the rest.
+**Two explanations were recorded here and both are refuted.**
 
-No seeding scheme fixes this, because the information is absent rather than misallocated. Measured:
-seeding only the chosen motor, halving the rival share, and quadrupling the exploration rate all
-land within noise of each other and of the current rule. Exploration cannot rescue it either — a
-random alternative is correct one time in `k − 1`, while the signal promoting it is already
-divided by `k − 1`.
+The first was that a scalar reward cannot carry which of `k − 1` rivals should have won, so the
+information is absent. Measured: replacing the reward with the correct answer, at matched step
+size, changes nothing at two labels and *hurts* above — seeds that learn go 2→0 at six labels and
+3→0 at nine. At two labels the two signals are provably identical, since with two motors
+`calcMotorSeeds` puts the positive push on the correct motor whether it was chosen (gain positive)
+or not (gain negative); **that identity, not the information content, is why two labels work.**
+Supervision that ignores the choice also destroys the choice-outcome correlation the rule estimates
+from, which is why it actively hurts.
 
-The way out is likely to be structural rather than another rule: since binary decisions work, a
-`k`-label choice expressed as `⌈log₂ k⌉ binary ones — a code over motors rather than one motor per
-label — would put every decision back in the regime that works, and would turn label count from a
-linear cost into a logarithmic one. That is a change to the decoder contract and is recorded here
-rather than made unilaterally.
+The second was that a code over motors would put every decision back in the binary regime. Built as
+`CodeBook`, measured, and it loses to one-hot at every label count above two — a codeword is a
+conjunction, so the barrier appears in both the decode (joint accuracy is the product of per-bit
+accuracies) and the learning signal (the per-pair push is `4 * q**m * (1 - q)`, which peaks at
+`q = m/(m+1)` and is 16× weaker than one-hot's at initialisation). See specs/decoding.md.
+
+**What is actually happening is conduction collapse.** Training drives the edges serving harder
+inputs under the gate, and a mute edge fires no trace, so no update of any kind can reach it again.
+Reach falls 1.00 → 0.52 by step 1000 at nine labels, and the surviving inputs share one label. The
+0.51 plateau is not the mesh predicting the majority class — it is the mesh only still conducting
+for it. Supervision cannot help an input that generates no trace, which is why the strictly better
+signal did nothing. See specs/propagation.md for the conduction floor and the dead band, and
+ROADMAP.md for the remedies measured so far.
+
+Not the cause, each checked separately: the eligibility trace discriminates at every label count
+(same-vs-different-label cosine gap +0.377 at two, +0.364 at three, +0.249 at nine, against +0.03
+fresh); the training budget is ample (nothing moves between step 1,500 and step 15,000); and the
+representation holds the information (matched probe 0.81 on `majority` against 0.65 achieved).
 
 This is the binding constraint on multi-modal work, where label spaces are large by nature.
 
