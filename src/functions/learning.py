@@ -127,7 +127,11 @@ def applyLearning(
         mesh.strength[span],
     )
     mesh.epsilon[span] = torch.where(
-        mask, mesh.epsilon[span] * hyper.epsilon_decay, mesh.epsilon[span]
+        mask,
+        (mesh.epsilon[span] * calcPlasticityFactors(moved, hyper)).clamp(
+            hyper.epsilon_floor, hyper.epsilon_start
+        ),
+        mesh.epsilon[span],
     )
     mesh.log_str[span] = mesh.strength[span].abs().clamp_min(1e-6).log()
 
@@ -319,6 +323,38 @@ def switchCodeChoice(
     return switched
 
 
+def calcPlasticityFactors(moved: Tensor, hyper: HazeHyper) -> Tensor:
+    """Returns the multiplier each fired edge's learning rate takes, read from its own last move.
+
+    Cooling an edge that was just reinforced and warming one that was just weakened, rather than
+    the unconditional decay this replaces, which cooled an edge that had been consistently right
+    and one that had been consistently wrong at the same rate and never let either warm again.
+
+    Read per edge rather than from the observation's advantage, which is the version that does not
+    work: a mesh performing steadily — well or badly — has an advantage centred on zero once its
+    baseline catches up, so a global signal crystallizes nothing at exactly the point a section has
+    earned it. An edge's own move does not have that problem. An edge repeatedly part of answers
+    that are kept is repeatedly reinforced and hardens; one repeatedly part of answers that are
+    corrected is repeatedly weakened and softens; and two clusters in the same mesh harden
+    independently, which a single scalar could never express.
+
+    Multiplicative in both directions, which is what produces the hysteresis: undoing a long record
+    takes about as many reversals as the record took to build, so one bad answer cannot flatten a
+    section that spent hundreds of steps earning its place. An edge that did not move is evidence
+    for neither and holds — which also makes a non-finite move safe, since it compares false both
+    ways rather than poisoning the rate.
+    """
+    if not hyper.crystallize:
+        return torch.full_like(moved, hyper.epsilon_decay)
+    return torch.where(
+        moved > 0,
+        torch.full_like(moved, hyper.epsilon_cool),
+        torch.where(
+            moved < 0, torch.full_like(moved, hyper.epsilon_warm), torch.ones_like(moved)
+        ),
+    )
+
+
 def applyCreditedLearning(
     mesh,
     trace: Tensor,
@@ -361,7 +397,11 @@ def applyCreditedLearning(
         mesh.strength[span],
     )
     mesh.epsilon[span] = torch.where(
-        mask, mesh.epsilon[span] * hyper.epsilon_decay, mesh.epsilon[span]
+        mask,
+        (mesh.epsilon[span] * calcPlasticityFactors(moved, hyper)).clamp(
+            hyper.epsilon_floor, hyper.epsilon_start
+        ),
+        mesh.epsilon[span],
     )
     mesh.log_str[span] = mesh.strength[span].abs().clamp_min(1e-6).log()
 

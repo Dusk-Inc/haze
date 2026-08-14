@@ -95,6 +95,62 @@ mesh look more certain precisely when it is guessing, and confidence feeds both 
 signal and the growth trigger. It applies only while learning — `eval()` always answers greedily,
 so exploration never reaches a deployed answer.
 
+### An edge's learning rate hardens with reinforcement and softens with correction
+
+**Given** a fired edge and the move it just made
+**When** `crystallize` is on
+**Then** its learning rate is multiplied by `epsilon_cool` if it was strengthened, `epsilon_warm`
+if it was weakened, and held if it did not move, bounded to `[epsilon_floor, epsilon_start]`.
+
+A section that has regularly been part of good answers should not be torn down by one bad result.
+That hysteresis is what the inherited `epsilon_decay` promised and never delivered: it cooled every
+fired edge identically whatever the outcome, never warmed one again, and at 0.9999 had a half-life
+of 6,931 updates — leaving an edge holding 97-98% of its starting rate after a 3,000-step run.
+Measured, not inferred: the settled mean learning rate under the shipped decay is 0.0963-0.0979
+against a start of 0.1.
+
+**Read per edge, from its own move, not from the observation's advantage.** The advantage version
+was built first and does not work: a mesh performing steadily — well or badly — has an advantage
+centred on zero once its baseline catches up, so nothing crystallizes at exactly the point a
+section has earned it. An edge's own move has no such degeneracy, and being per-edge lets two
+clusters in one mesh harden independently, which no global scalar could express.
+
+`epsilon_floor` is load-bearing rather than defensive. An edge at a zero learning rate can never be
+moved again whatever happens to it, which is the same absorbing state as an edge that has fallen
+mute (see [propagation.md](propagation.md)). A fully crystallized edge is slow, never frozen.
+
+**Measured on a mid-run task switch** — `copy(bit 0)` for 1,500 steps, then `copy(bit 3)`, 8 seeds:
+
+| arm | pre-switch | +300 steps | recovered |
+|---|---|---|---|
+| off (shipped) | 0.96 / 0.84 | 0.54 / 0.47 | **0.39 / 0.37** |
+| **on** | 0.97 / 0.79 | **0.95** / 0.56 | **0.73 / 0.54** |
+| on, `epsilon_cool` 0.97 | 1.00 / 0.69 | 1.00 / 0.52 | 1.00 / 0.51 |
+
+(reach / accuracy; chance 0.51.) **Three of eight seeds die outright with it off** — ending at
+0.00-0.01, raising `SignalDidNotReachMotorsError` — and **none die with it on**. Conduction 300
+steps after the switch is 0.95 against 0.54: the established mesh absorbs the shock instead of
+collapsing. Recovered accuracy crosses from below chance to above it, with two seeds fully
+relearning the new task (0.96, 1.00), though the mean of 0.54 says the mesh mostly *survives* the
+change rather than relearning it well.
+
+**On the stationary label sweep it is mixed**, 8 seeds, accuracy and seeds-that-learn:
+
+| labels | off | on |
+|---|---|---|
+| 2 | 0.75, 5/8 | 0.75, 5/8 |
+| 3 | 0.63, 3/8 | **0.68, 6/8** |
+| 9 | **0.48, 1/8** | 0.33, 0/8 |
+
+Three labels is the first movement on the bimodality recorded below — seeds that learn double, and
+reach rises 0.66 to 0.83. Two labels is unchanged. **Nine labels regresses and is unexplained**;
+the rate does fall to 0.071 there, so it is crystallizing, and why that costs accuracy is open.
+
+`epsilon_cool` is a genuine trade-off rather than a knob to turn up. At 0.97 conduction goes to
+0.93-1.00 everywhere and accuracy falls to chance — over-crystallization freezes the policy, which
+is the same failure shape as the inherited `reward - confidence` rule. Defaulted off until the
+nine-label regression is understood.
+
 ### Strength is bounded
 
 **Given** an edge whose update would carry it outside `[strength_lower, strength_upper]`

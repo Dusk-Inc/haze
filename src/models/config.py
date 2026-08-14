@@ -62,6 +62,16 @@ class HazeHyper(BaseModel):
     strength_init_upper: float = Field(default=defaults.STRENGTH_INIT_UPPER, gt=0.0, le=1.0)
     epsilon_start: float = Field(default=defaults.EPSILON_START, gt=0.0, le=1.0)
     epsilon_decay: float = Field(default=defaults.EPSILON_DECAY, gt=0.0, le=1.0)
+    crystallize: bool = False
+    """Whether an edge's learning rate hardens with good outcomes and softens with bad ones.
+
+    False keeps the inherited `epsilon_decay`, which cools every fired edge identically whatever
+    the outcome and never warms one again. Off by default so the difference stays measurable
+    rather than assumed. See specs/learning.md.
+    """
+    epsilon_cool: float = Field(default=defaults.EPSILON_COOL, gt=0.0, le=1.0)
+    epsilon_warm: float = Field(default=defaults.EPSILON_WARM, ge=1.0)
+    epsilon_floor: float = Field(default=defaults.EPSILON_FLOOR, gt=0.0, lt=1.0)
     prune_threshold: float = Field(default=defaults.PRUNE_THRESHOLD, gt=0.0, lt=1.0)
     growth_rate: float = Field(default=defaults.GROWTH_RATE, gt=0.0, lt=1.0)
     growth_threshold: float = Field(default=defaults.GROWTH_THRESHOLD, gt=0.0, lt=1.0)
@@ -154,6 +164,16 @@ class HazeHyper(BaseModel):
             )
         if self.fanout_min > self.fanout_max:
             raise ValueError("fanout_min must not exceed fanout_max")
+        if self.epsilon_floor >= self.epsilon_start:
+            raise ValueError(
+                "epsilon_floor must stay below epsilon_start, or an edge begins fully "
+                "crystallized and can never be moved by any outcome"
+            )
+        if self.crystallize and self.epsilon_cool >= 1.0 and self.epsilon_warm <= 1.0:
+            raise ValueError(
+                "crystallize needs epsilon_cool below 1 or epsilon_warm above 1, or the "
+                "learning rate never moves and the mechanism is dead code"
+            )
 
         reachable = self.signal_lower * self.strength_init_upper * self.strength_init_upper
         if reachable <= self.signal_threshold:

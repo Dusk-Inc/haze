@@ -52,7 +52,44 @@ wrong rule rather than declining to learn. See specs/learning.md.
 """
 
 EPSILON_DECAY = 0.9999
-"""Multiplier applied to an edge's learning rate each time it is updated."""
+"""Multiplier applied to an edge's learning rate each time it is updated.
+
+Outcome-blind and one-directional: an edge that has been consistently right and one that has been
+consistently wrong cool at the same rate, and neither ever warms again. It is also inert at the
+scales the model trains at — a half-life of 6,931 updates leaves an edge holding 86% of its
+starting rate after a 1,500-step run, and it only updates on steps where it fires. Used when
+`crystallize` is off. See EPSILON_COOL for the mechanism that replaces it.
+"""
+
+EPSILON_COOL = 0.99
+"""Multiplier on an edge's learning rate when the outcome beat expectation.
+
+An edge that keeps being part of good answers becomes rigid, so a single bad result cannot tear
+down a record it took hundreds of steps to build. That hysteresis is the point: the conduction
+collapse in specs/propagation.md is driven by sustained negative advantage pushing established
+edges under the signal gate, and an edge that has earned its place should barely move under it.
+"""
+
+EPSILON_WARM = 1.01
+"""Multiplier on an edge's learning rate when the outcome fell short of expectation.
+
+The half the inherited decay never had. Cooling with no path back is a second absorbing state —
+the same shape of bug as an edge that has fallen mute — and it is what leaves a mesh unable to
+relearn when its task changes. Warming is per-event and gradual, so a crystallized section takes
+about as many bad outcomes to soften as it took good ones to set.
+
+Paired with EPSILON_COOL this puts the drift's zero at `log(warm) / (log(warm) - log(cool))`,
+which for 0.99 and 1.01 is 0.4975 — an edge cools while it is right slightly more often than half
+the time, and warms when it is not. See specs/learning.md.
+"""
+
+EPSILON_FLOOR = 0.005
+"""Lower bound on an edge's learning rate, below which crystallization would be permanent.
+
+An edge at zero learning rate can never change again whatever happens to it, which is precisely
+the absorbing state this whole mechanism exists to avoid. The floor keeps a fully crystallized
+edge slow rather than frozen.
+"""
 
 REWARD_BASELINE_RATE = 0.02
 """How fast the running reward baseline tracks recent reward.

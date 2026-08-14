@@ -131,10 +131,19 @@ at 1.00 and never learns. Both buy conduction and pay everything for it. The str
 only mechanism measured so far that improves both at once, which is why it stays interesting at an
 effect size this small.
 
-**Remaining candidates:** asymmetric rates so weakening is slower than strengthening; per-neuron
-outgoing normalisation so weakening one edge strengthens its siblings rather than draining the
-neuron; or treating silence as its own outcome rather than as reward 0, since scoring it as failure
-is what makes the loop self-reinforcing.
+**Crystallization is the best remedy measured, and is not yet a default.** `crystallize` hardens a
+reinforced edge and softens a corrected one, per edge, bounded at both ends — the mechanism the
+per-edge `epsilon` buffer always existed for and which neither engine ever implemented. It is the
+first thing to **remove** rather than mitigate the death case (3/8 seeds dying on a task switch →
+0/8, conduction 300 steps after the switch 0.54 → 0.95) and the first to move the seed lottery
+(three labels: 3/8 seeds learning → 6/8, reach 0.66 → 0.83). It **regresses at nine labels**
+(0.48 → 0.33, 1/8 → 0/8) for reasons not yet understood, and `epsilon_cool` at 0.97 over-
+crystallizes into a frozen policy at chance. Default off until the regression is explained. Full
+numbers in specs/learning.md.
+
+**Remaining candidates:** per-neuron outgoing normalisation so weakening one edge strengthens its
+siblings rather than draining the neuron; or treating silence as its own outcome rather than as
+reward 0, since scoring it as failure is what makes the loop self-reinforcing.
 
 **The two rules fail in opposite directions, and neither is closer to right.** The inherited signal
 decomposes exactly as `r - c ≡ (r - r̄) + (r̄ - c)` — today's centred advantage plus a bias measuring

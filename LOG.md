@@ -542,3 +542,73 @@ the prune threshold and is stripped on the next pass (0.40 accuracy, 0.42 reach)
 `calcConductionReach` and `calcReachByLabel` in `src/functions/score.py`. Accuracy hides this
 failure completely; none of it was visible until conduction was watched directly, and the per-label
 split is what makes it legible (the aggregate falls smoothly while whole labels drop to zero).
+
+## Crystallization: the mechanism the per-edge learning rate was always for
+
+`epsilon` has been a per-edge buffer since the prior engine, decayed by `epsilon_decay` on every
+update of a fired edge. Three properties of the mechanism it was standing in for were missing, and
+the prior engine at `app/src/registry/core.py:66` had exactly the same gap, so this was never built
+rather than lost in the rewrite:
+
+- **Outcome-blind.** An edge that had been consistently right and one consistently wrong cooled at
+  the same rate.
+- **One-directional.** Cooling never reversed, so a hardened section that went bad could not become
+  plastic again — a second absorbing state, the same shape as an edge fallen mute.
+- **Inert.** A half-life of 6,931 updates leaves an edge at 0.096-0.098 of a 0.1 start after 3,000
+  steps. Measured, not estimated.
+
+Now `calcPlasticityFactors`: cool on reinforcement, warm on correction, hold on no move, bounded to
+`[epsilon_floor, epsilon_start]`. Off by default behind `crystallize`.
+
+### Read per edge, because the obvious version is degenerate
+
+Built first as the direct reading of the design — good outcome cools, bad outcome warms, driven by
+the observation's advantage. Three tests failed and showed why it cannot work: **a mesh performing
+steadily has an advantage centred on zero once its baseline catches up**, so a perfectly-performing
+cluster crystallizes not at all. That is the same zero-drift trap this branch spent the day
+diagnosing, reappearing inside the mechanism built to escape it.
+
+Reading each edge's own move has no such degeneracy, and is better than the design rather than
+equivalent to it: two clusters in one mesh harden independently, which a single scalar could not
+express. The hysteresis falls out of the multiplicative form — undoing a 300-round record takes
+comparably many reversals, and one bad result moves a settled mesh by under 2%.
+
+`epsilon_floor` is load-bearing. An edge at zero learning rate can never change again whatever
+happens to it, which is precisely the absorbing state the mechanism exists to avoid.
+
+### It fixes the adaptation case
+
+Task switch, `copy(bit 0)` then `copy(bit 3)`, 8 seeds, reach / accuracy:
+
+| arm | pre-switch | +300 | recovered |
+|---|---|---|---|
+| off | 0.96 / 0.84 | 0.54 / 0.47 | 0.39 / **0.37** |
+| on | 0.97 / 0.79 | **0.95** / 0.56 | 0.73 / **0.54** |
+
+**Three of eight seeds die with it off; none die with it on.** That failure — a mesh ending at 0.00,
+raising `SignalDidNotReachMotorsError` on every input — has recurred in every part of this branch's
+work, and this is the first mechanism that removes rather than mitigates it. Conduction 300 steps
+after the switch is 0.95 against 0.54. Two seeds fully relearn the new task (0.96, 1.00); the mean
+of 0.54 against chance 0.51 says the mesh mostly *survives* the change rather than relearning it.
+
+### On stationary tasks it is mixed, and nine labels regresses
+
+| labels | off | on |
+|---|---|---|
+| 2 | 0.75, 5/8 learned | 0.75, 5/8 |
+| 3 | 0.63, 3/8 | **0.68, 6/8** |
+| 9 | **0.48, 1/8** | 0.33, 0/8 |
+
+Three labels doubles the seeds that learn and lifts reach 0.66 to 0.83 — the first movement on the
+bimodality all branch, and the property that matters most for stability, since the failure there is
+a seed lottery rather than a low ceiling. Two labels unchanged.
+
+**Nine labels regresses and is not explained.** The rate does fall to 0.071 there, so crystallization
+is happening; why it costs accuracy is open. Recorded unexplained rather than narrated, given how
+many mechanism guesses this branch has had overturned by the next measurement.
+
+`epsilon_cool` at 0.97 over-crystallizes: conduction 0.93-1.00 and accuracy at chance, which is the
+frozen-policy failure of the inherited `reward - confidence` rule reached by another road. 0.99 sits
+near that edge, so the parameter is a trade-off and not a knob to turn up.
+
+Default off until the nine-label regression is understood.
