@@ -125,10 +125,10 @@ class TestHealingDomain:
     def testAConductingMeshIsUntouched(self):
         """Healing is silent where nothing is wrong.
 
-        Built by lifting every edge above the floor first, because a *fresh* mesh is not such a
-        mesh: initial strengths are drawn from a range whose bottom quarter sits under the
-        conduction floor, so a neuron whose only out-edge falls there is born unable to pass
-        signal. See specs/propagation.md.
+        Built by lifting every edge to the rail rather than trusting a fresh mesh to be conducting,
+        so the test still holds for a caller who sets an initial range back under the conduction
+        floor — which is what the shipped default used to do, leaving roughly a quarter of every
+        fresh mesh's edges born mute. See specs/propagation.md.
         """
         model = makeMesh()
         live = model.mesh.counts.edges
@@ -177,9 +177,9 @@ class TestHealingBoundary:
 class TestHealingIntegration:
     """Domain: the flag routes healing into the ordinary learn path and reports it."""
 
-    def testDisabledByDefault(self):
-        """A default configuration heals nothing, so today's behaviour is unchanged."""
-        assert HazeHyper().conductance_healing is False
+    def testEnabledByDefault(self):
+        """A default configuration heals, because losing a pathway permanently is the worse bug."""
+        assert HazeHyper().conductance_healing is True
 
     def testLearnReportsWhatItHealed(self):
         """A learn step over a muted mesh reports the neurons it lifted."""
@@ -190,7 +190,7 @@ class TestHealingIntegration:
 
     def testLearnHealsNothingWhenDisabled(self):
         """With the flag off the count stays zero even on a mute mesh."""
-        model = makeMesh()
+        model = makeMesh(conductance_healing=False)
         model({"bits": [1, 0, 1, 0, 1, 0, 1, 0]})
         muteNeuron(model, int(model.mesh.src[0]))
         assert model.learn(1.0).healed == 0

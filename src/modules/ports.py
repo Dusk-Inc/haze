@@ -178,7 +178,14 @@ class PortRegistry:
         The codebook is generated once, at the first binding, and then travels in the checkpoint.
         A label's identity is its codeword exactly as it was its motor index before: regenerating
         the book under a grown label set would silently reassign every label the mesh had already
-        learned about, so a later call may only extend it. See specs/decoding.md.
+        learned about, so a later call may only extend it.
+
+        Measured, no coded decoder can currently be extended at all: both code families regenerate
+        from scratch, so 0/8 original codewords survive going from eight labels to nine and this
+        raises. The guard is right and the generator is what has to change — codeword assignment
+        has to take the next unused word and keep its distance against what is already assigned,
+        never redraw the book. Until then a coded decoder is fixed at the label set it was built
+        with, and only one-hot grows. See specs/decoding.md.
         """
         spec = self.findPortSpec(key)
         entry = self.labels[key]

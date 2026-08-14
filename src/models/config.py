@@ -72,12 +72,15 @@ class HazeHyper(BaseModel):
     epsilon_cool: float = Field(default=defaults.EPSILON_COOL, gt=0.0, le=1.0)
     epsilon_warm: float = Field(default=defaults.EPSILON_WARM, ge=1.0)
     epsilon_floor: float = Field(default=defaults.EPSILON_FLOOR, gt=0.0, lt=1.0)
-    conductance_healing: bool = False
+    conductance_healing: bool = True
     """Whether a neuron whose outgoing edges have all fallen mute is scaled back to conducting.
 
-    False leaves the mesh able to lose pathways permanently, which is what it does today: an edge
-    driven under the signal gate fires no trace, and every learning update is gated on a trace, so
-    nothing can ever move it again. See specs/propagation.md.
+    On by default because the alternative is an absorbing state: an edge driven under the signal
+    gate fires no trace, every learning update is gated on a trace, so nothing can ever move it
+    again and the pathway is lost permanently. The scaling is proportional, so what learning
+    decided about an edge's rank among its siblings survives being lifted. Paired with a
+    `strength_init_lower` above the conduction floor, since healing an input space that was never
+    conducting is a treadmill. See specs/propagation.md.
     """
     heal_margin: float = Field(default=defaults.HEAL_MARGIN, ge=1.0)
     """How far above the bare conduction floor a healed neuron is lifted.

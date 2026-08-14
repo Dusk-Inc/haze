@@ -708,3 +708,84 @@ probe from rank 8/33 to full and moved copy 0.37 → 0.87: a **representation** 
 
 Full rank with a low bound is the specific thing to explain — the dimensions are present and the
 structure the task needs is not being formed in them.
+
+---
+
+## feat-169 — Both remedies become defaults, and the vocabulary is sized
+
+### The defaults
+
+`strength_init_lower` 0.4 → **0.55** and `conductance_healing` False → **True**. The first keeps
+the initial range above the single-hop conduction floor of 0.527, so no edge is born mute; the
+shipped 0.4 put roughly a quarter of every fresh mesh's edges in the dead band before a single
+observation. The second scales a neuron's out-edges proportionally back over the floor after each
+update, so learning can weaken an edge but cannot delete it from the mesh's behaviour.
+
+Gain at three labels, cost nowhere. Three labels: 13/40 seeds learning → 23/40, coverage
+0.59 → 0.73, lift +0.13 → +0.22. Two labels through the full trainer loop over 24 seeds: mean
+reward 0.71 → 0.70, conditional 0.77 → 0.77, lift +0.24 → +0.24, coverage 0.97 → 0.99. Nine labels
+unmoved. Neither mechanism touches the representational ceiling, and neither is claimed to.
+
+### Two gate tests moved, and one of them was measuring its seed
+
+`test_flowRecoverSignal_doesRaiseWhenRecoveryIsRefused` zeroes every strength and expects silence.
+With healing on the mesh recovers: reverse learning lifts the strengths a little and healing scales
+that back over the floor. That is the mechanism working, so the test now turns healing off rather
+than being weakened.
+
+`test_flowTraining_doesLearnWhileRestructuring` ran one seed against a 0.6 threshold and went
+0.92 → 0.49. It was not a regression. Across twelve seeds at that exact configuration the arms are
+indistinguishable — mean 0.70 → 0.68, and **6/12 seeds clear 0.6 under each** — so a single-seed
+threshold there passes or fails on which seed it was written against. It now averages six seeds,
+which is what the claim ("the full loop beats chance") actually says.
+
+### Sizing a million-label vocabulary
+
+Four obstacles, and only three are about the label count.
+
+**The label count is the cheap axis.** With a code that corrects 15 errors, a million labels needs
+141 bits — **282 motors**. Nothing in the architecture strains at that.
+
+**`calcCodeWidth`'s redundancy never becomes distance.** The books `makeRandomCode` returns have
+minimum distance **1 at every size measured** — 16, 64, 256, 1,024, and 4,096 labels — so the spare
+bits correct nothing. That is what the width asks for, not a bad draw: `k` random `m`-bit words
+expect `C(k,2)·(m+1)/2^m` pairs at distance ≤ 1, which exceeds one at `m = 2·log2(k)` above a
+handful of labels. The docstring's claim that spare bits "let a codeword be decoded to its nearest
+neighbour instead" has never been true in a shipped configuration.
+
+**Construction is quadratic.** `calcCodeDistance` materializes a `k × k × m` comparison per try:
+7.7 s and 4·10⁸ bytes at 4,096 labels, ~2·10¹⁴ bytes at a million. The book cannot be built past a
+few thousand labels whatever its width.
+
+**The label set is frozen once bound.** Adding one label regenerates the whole book — 0/8 original
+codewords survive at 8 → 9, and the width changes with it — so `setCodedLabels` correctly refuses
+and a coded decoder can never take a label it has not already seen. Only one-hot grows. **The mode
+that scales cannot grow, and the mode that grows cannot scale.**
+
+### The obstacle that is not about labels
+
+Seventeen labels, 10-bit random code, 8 seeds, defaults on: five seeds answer nothing, and the
+three that answer emit **one or two distinct bit patterns across 400 held-out inputs**. Wrong-bit
+variance is 0.00–0.10 where independent errors would give 1.7–2.4. The bits are constant, not
+noisy. Their conditional accuracy of 1.00 is the answered-set confound at its most extreme — a
+fixed pattern is right about exactly the inputs whose label it decodes to.
+
+So there is no per-bit accuracy to size a code against, and every width calculation above is
+premature arithmetic.
+
+The mechanism, measured: **nine live edges in ten fire on every observation**, flat at 0.89–0.91 as
+the mesh grows 96 → 1,536 neurons. Every input uses the whole mesh. Cost is therefore the mesh
+rather than the input (2.11 → 8.45 ms as edges go 998 → 14,227); no capacity is allocated per
+label, so every label's learning overwrites every other's; and growth adds substrate every input
+immediately consumes rather than a region a failing input can move into.
+
+**This is a mechanism for the label cliff that does not involve the learning rule**, and it
+retrodicts the session: nine rule-level mechanisms each bought little, which is what tuning an
+extractor against a shared undifferentiated substrate looks like.
+
+The tension is that firing less is what capacity needs and firing less is what stops signal
+arriving — a path's value only ever multiplies by strengths below one, and convergence is what
+keeps it alive. Fan-out sparsity was measured against that economy twice and lost both times.
+Changing the economy, so a neuron's arriving value does not depend on how many edges fed it, is
+what would make sparsity affordable. It is untried, and it is the same per-neuron normalisation
+already listed as a remaining candidate for the conduction collapse.

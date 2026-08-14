@@ -7,13 +7,21 @@ from ..errors import LabelSpaceError
 
 
 def calcCodeWidth(count: int, redundancy: int = 2) -> int:
-    """Returns how many bits to spend on `count` labels, including room for error correction.
+    """Returns how many bits to spend on `count` labels, intended to leave room for correction.
 
-    More than the `log2(count)` a bare enumeration needs. With the minimum, every bit pattern is a
-    valid label, so one wrong bit silently yields a different answer and nothing can detect it.
-    The spare bits are what let a codeword be decoded to its nearest neighbour instead — which
-    matters here beyond ordinary noise, because some bits will be functions the mesh cannot
-    represent at all, and redundancy is what turns those from fatal into merely wasteful.
+    More than the `log2(count)` a bare enumeration needs, on the reasoning that spare bits let a
+    codeword be decoded to its nearest neighbour rather than silently becoming a different answer.
+
+    **Measured, this width delivers none of that.** The books `makeRandomCode` returns at it have
+    minimum distance 1 at every size tried — 16, 64, 256, 1,024, and 4,096 labels — so no error is
+    survivable. That is what the width asks for rather than an unlucky draw: `count` random `m`-bit
+    words expect `C(count,2)·(m+1)/2**m` pairs at distance 1 or less, and at `m = 2·log2(count)`
+    that expectation exceeds one above a handful of labels. Distance `d` needs `m` large enough
+    that `C(count,2)·V(m,d-1)/2**m < 1`, which for a million labels is 50 bits to correct one error
+    and 141 to correct fifteen — still only 282 motors, so the width is worth spending.
+
+    Left as it is rather than widened, because there is no per-bit error rate to size against yet:
+    a trained mesh at seventeen labels emits a constant codeword. See specs/decoding.md.
     """
     if count < 2:
         raise LabelSpaceError("a codebook needs at least two labels to encode")
@@ -41,6 +49,11 @@ def calcCodeDistance(codes: list[list[int]]) -> int:
     How many wrong bits the codebook can absorb: a distance of `d` decodes correctly through
     `(d - 1) // 2` errors. A distance of 1 means no error is survivable and any single wrong bit
     changes the answer.
+
+    Quadratic in the label count, and that is what bounds the label space rather than the motor
+    count: the comparison materializes `count**2 * width` values, measured at 4·10**8 bytes and
+    7.7 s for 4,096 labels and around 2·10**14 bytes for a million. A large codebook has to be
+    generated with a known distance instead of drawn and measured. See specs/decoding.md.
     """
     if len(codes) < 2:
         return 0

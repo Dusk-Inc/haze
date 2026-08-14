@@ -134,3 +134,86 @@ are harder, which lowers `p` — and that trade was not resolved.
 
 `CodeBook` ships available and non-default. One-hot remains what a decoder uses unless asked
 otherwise, and the two stay comparable so this result can be re-tested against a better rule.
+
+## Scaling the label space
+
+The codebook is the only mode whose motor count is sublinear in the label count, so it is the only
+mode a large vocabulary could use. Measured against that ambition it has four separate problems,
+and they are worth stating in the order they bite.
+
+### The width function's redundancy does not become distance
+
+`calcCodeWidth` spends `2·log2(k)` bits so a wrong bit can be corrected by decoding to the nearest
+codeword. Measured, the codebook `makeRandomCode` actually returns has **minimum distance 1 at
+every size**, which corrects nothing:
+
+| labels | width | motors | achieved distance | errors corrected | build seconds |
+|---|---|---|---|---|---|
+| 16 | 8 | 16 | 1 | 0 | 0.00 |
+| 64 | 12 | 24 | 1 | 0 | 0.00 |
+| 256 | 16 | 32 | 1 | 0 | 0.01 |
+| 1,024 | 20 | 40 | 1 | 0 | 0.42 |
+| 4,096 | 24 | 48 | 1 | 0 | 7.73 |
+
+This is not a bad draw, it is what the width asks for. `k` random words of `m` bits expect
+`C(k,2)·(m+1)/2^m` pairs at distance ≤ 1, and at `m = 2·log2(k)` that expectation is above one at
+every size above a handful. The width that does buy correction is much larger, and still cheap in
+motors — the widths below are where a random draw expects fewer than one colliding pair:
+
+| labels | shipped width | corrects 1 | corrects 5 | corrects 15 |
+|---|---|---|---|---|
+| 1,000 | 20 | 28 | 54 | 109 |
+| 1,000,000 | 40 | 50 | 80 | 141 |
+| 100,000,000 | 54 | 64 | 96 | 161 |
+
+**A million labels needs about 282 motors, not a million.** The label count is the cheap axis and
+always was; what the width has to be sized against is the per-bit error rate, not the vocabulary.
+
+### The construction is quadratic in the label count
+
+`calcCodeDistance` materializes a `k × k × m` comparison to find the minimum pairwise distance, and
+`makeRandomCode` calls it once per try. That is 7.7 s and 4·10⁸ bytes at 4,096 labels; a million
+labels is roughly 2·10¹⁴ bytes. **The codebook cannot be built past a few thousand labels**,
+whatever its width. A large book has to be generated with a construction whose distance is known
+rather than drawn and measured.
+
+### The label set is frozen once it is bound
+
+`setCodedLabels` refuses a change that would reassign a codeword already learned about, which is
+right — a label's identity *is* its codeword. But growing the label set regenerates the whole book,
+so every codeword changes and the refusal fires on the first new label:
+
+| decoder | 8 → 9 labels |
+|---|---|
+| random code | refused: 0/8 original codewords survive, width 6 → 8 |
+| thermometer | refused: width is `k − 1`, so it changes by construction |
+| one-hot | grows |
+
+So **the mode that scales cannot grow its label set, and the mode that grows cannot scale.** A
+continuously-learning model has to add a label it has never seen, which means codeword assignment
+must be incremental — take the next unused word, never redraw the book — with distance maintained
+against what is already assigned rather than optimized across the whole set at once.
+
+### The bits are not input-conditional at all
+
+This is the one that makes the other three premature. Seventeen labels, a 10-bit random code, 20
+motors, 3,000 steps, 8 seeds, shipped defaults with healing on:
+
+| seed | coverage | per-bit | mean wrong bits | variance | binomial variance | distinct bit patterns |
+|---|---|---|---|---|---|---|
+| 4 | 0.23 | 0.79 | 2.11 | 0.10 | 1.66 | **2** |
+| 6 | 0.53 | 0.60 | 4.00 | 0.00 | 2.40 | **1** |
+| 7 | 0.50 | 0.70 | 3.00 | 0.00 | 2.10 | **1** |
+
+Five of the eight seeds answer nothing at all. The three that answer emit **one or two distinct bit
+patterns across 400 held-out inputs** — a constant codeword. The wrong-bit count has essentially
+zero variance where independent bit errors would give 1.7–2.4, because the errors are not noise;
+the output does not move.
+
+Their conditional accuracy is 1.00, and that figure means nothing: a mesh emitting a fixed pattern
+answers only the inputs whose label that pattern decodes to, so it is right about all of them. It
+is the answered-set confound from `ScoreProfile`, at its most extreme.
+
+**There is no per-bit accuracy to size a code against yet.** Everything above — widths, distance,
+incremental assignment — is arithmetic that becomes actionable only once a bit varies with the
+input. See specs/propagation.md for why it does not.

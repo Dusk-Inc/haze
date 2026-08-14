@@ -34,8 +34,17 @@ STRENGTH_LOWER = 0.1
 STRENGTH_UPPER = 0.9
 """Upper rail an edge strength is clamped to."""
 
-STRENGTH_INIT_LOWER = 0.4
-"""Lower bound of the uniform range a new edge's strength is drawn from."""
+STRENGTH_INIT_LOWER = 0.55
+"""Lower bound of the uniform range a new edge's strength is drawn from.
+
+Held above `HazeHyper.calcConductionFloor()`, which is 0.527 under these defaults, so no edge is
+born unable to pass signal. The inherited 0.4 put the bottom quarter of the initial range inside
+the dead band: roughly a quarter of every fresh mesh's edges were alive, unprunable, and mute
+before a single observation, and since a mute edge fires no trace and every update is gated on a
+trace, nothing could ever recover them. Measured with `conductance_healing`, this raised the share
+of seeds that learn anything on a three-label task from 13/40 to 23/40 and coverage from 0.59 to
+0.73. See specs/propagation.md.
+"""
 
 STRENGTH_INIT_UPPER = 0.9
 """Upper bound of the uniform range a new edge's strength is drawn from."""

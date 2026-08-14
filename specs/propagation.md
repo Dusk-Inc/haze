@@ -228,6 +228,40 @@ Fan-out is therefore a configured knob with a wide default rather than a claim, 
 rescue built alongside it is kept on its own merits — pruning is allowed to disconnect a neuron,
 and something has to reconnect it.
 
+### Every input uses the whole mesh
+
+The wiring is one way to be sparse; what actually *fires* is another, and the second one is
+measured flat. Share of live edges carrying signal on an average observation, on the copy task
+after 20 warm-up steps:
+
+| nexus | neurons | live edges | ms/observation | share of edges fired |
+|---|---|---|---|---|
+| 64 | 96 | 998 | 2.11 | 0.89 |
+| 128 | 192 | 1,612 | 2.44 | 0.90 |
+| 256 | 384 | 3,589 | 3.60 | 0.90 |
+| 512 | 768 | 7,341 | 5.55 | 0.91 |
+| 1,024 | 1,536 | 14,227 | 8.45 | 0.91 |
+
+**Nine edges in ten fire for every input, and enlarging the mesh sixteenfold does not change that.**
+Three consequences follow, and they are the same fact seen from three sides:
+
+- **Cost is the mesh, not the input.** Observation time tracks live edges, so a mesh large enough
+  to hold a large problem is a mesh that pays for all of it on every observation.
+- **Capacity is not allocated.** Two inputs that should be represented by different structure are
+  represented by the same 90% of the edges, so every label's learning writes over every other
+  label's. This is a mechanism for the label cliff that does not depend on the learning rule at
+  all, and it predicts the rule-level fixes tried on this branch would each buy little — which is
+  what they did.
+- **Growth cannot localize.** New interneurons join the same undifferentiated pool, so adding
+  capacity adds substrate every input immediately consumes rather than a region a failing input
+  can move into.
+
+The tension with the sparsity result above is real and is the open problem: firing less is what
+capacity needs, and firing less is what stops signal arriving, because a path's value only ever
+multiplies by strengths below one and convergence is what keeps it alive. Fan-out sparsity was
+tried against that economy and lost. Changing the economy — so a neuron's arriving value does not
+depend on how many edges fed it — is what would make sparsity affordable, and it is untried.
+
 ## An edge below the conduction floor is alive and mute
 
 **Given** an edge whose strength has fallen below what the gate admits

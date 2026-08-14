@@ -141,9 +141,19 @@ first thing to **remove** rather than mitigate the death case (3/8 seeds dying o
 crystallizes into a frozen policy at chance. Default off until the regression is explained. Full
 numbers in specs/learning.md.
 
+**Prevention and repair are now the defaults.** `strength_init_lower` is 0.55, above the single-hop
+conduction floor, so no edge is born mute — the shipped 0.4 put a quarter of every fresh mesh's
+edges in the dead band before a single observation. `conductance_healing` is on, so an edge learning
+drives under the gate is scaled proportionally back over it rather than lost. Together they took
+three labels from 13/40 seeds learning to 23/40, coverage 0.59 → 0.73, and lift +0.13 → +0.22. The
+measured cost elsewhere is nil: at two labels through the full trainer loop over 24 seeds, mean
+reward 0.71 → 0.70, lift +0.24 → +0.24, coverage 0.97 → 0.99; at nine labels, unmoved. Neither
+mechanism touches the representational ceiling, and neither is claimed to.
+
 **Remaining candidates:** per-neuron outgoing normalisation so weakening one edge strengthens its
 siblings rather than draining the neuron; or treating silence as its own outcome rather than as
-reward 0, since scoring it as failure is what makes the loop self-reinforcing.
+reward 0, since scoring it as failure is what makes the loop self-reinforcing. The first of these is
+also step 1 of the scaling order in (3b), which is a reason to prefer it.
 
 **The two rules fail in opposite directions, and neither is closer to right.** The inherited signal
 decomposes exactly as `r - c ≡ (r - r̄) + (r̄ - c)` — today's centred advantage plus a bias measuring
@@ -259,6 +269,61 @@ that curve. Nothing yet gives both. Distance also assumes errors are independent
 minority, and ours are neither — every bit reads the same terminus activation through the same
 rule, and a bit whose partition the mesh cannot represent is wrong systematically rather than
 occasionally.
+
+**That last sentence was a prediction, and it is now measured — it is worse than stated.** At
+seventeen labels on a 10-bit random code, five of eight seeds answer nothing, and the three that
+answer emit **one or two distinct bit patterns across 400 held-out inputs**. The wrong-bit count
+has near-zero variance where independent errors would give 1.7–2.4. The bits are not
+systematically wrong; they are *constant*. There is no per-bit accuracy to trade distance against,
+because nothing about the output varies with the input. Full table in
+[specs/decoding.md](specs/decoding.md).
+
+---
+
+## 3b. Scaling to a very large vocabulary
+
+**Status:** measured, and the answer is that only one of the four obstacles is about label count.
+
+The ambition is a continuously-learning signal processor with a vocabulary in the millions. Sizing
+that against what exists:
+
+**The label count is the cheap axis, and it always was.** With an error-correcting code a million
+labels needs about **282 motors**, not a million — 141 bits to correct 15 errors, two motors per
+bit. Nothing in the architecture strains at that. Three things do:
+
+1. **`calcCodeWidth`'s redundancy never becomes distance.** The shipped widths produce minimum
+   distance **1 at every size measured**, from 16 labels to 4,096, so the spare bits correct
+   nothing. Fixable arithmetic — the widths that work are tabulated in
+   [specs/decoding.md](specs/decoding.md).
+2. **Construction is quadratic.** `calcCodeDistance` materializes a `k × k × m` comparison; 7.7 s
+   and 4·10⁸ bytes at 4,096 labels, ~2·10¹⁴ bytes at a million. A large book must be *generated*
+   with known distance, never drawn and measured.
+3. **The label set is frozen once bound.** Adding one label regenerates the whole codebook — 0/8
+   original codewords survive at 8 → 9 — so `setCodedLabels` rightly refuses and the decoder can
+   never take a label it has not already seen. Only one-hot grows. **The mode that scales cannot
+   grow; the mode that grows cannot scale.** Codeword assignment has to become incremental: take
+   the next unused word, keep distance against what is assigned, never redraw.
+
+**And one thing that is not about labels at all, which is the real ceiling.** Nine live edges in
+ten fire on every observation, and that share is flat at 0.89–0.91 as the mesh grows from 96 to
+1,536 neurons ([specs/propagation.md](specs/propagation.md)). Every input uses the whole mesh. So
+per-observation cost is the size of the mesh rather than the size of the input's footprint in it;
+no capacity is allocated per label, so every label's learning overwrites every other's; and growth
+adds substrate that every input immediately consumes instead of a region a failing input can move
+into. **This is a mechanism for the label cliff that does not involve the learning rule**, and it
+predicts that rule-level fixes buy little — which is what every rule-level fix on this branch did.
+
+Ordered, then, and each step is a precondition for the next:
+
+| | what | why it is where it is |
+|---|---|---|
+| 1 | A signal economy where arriving value does not depend on fan-in | sparsity is unaffordable until this changes; it was tried against the current economy and lost |
+| 2 | Input-conditional firing | gives capacity per label, makes cost track the input, makes growth localizable |
+| 3 | Per-bit reliability around 0.95 | what a million-label code needs; unmeasurable until a bit varies with the input at all |
+| 4 | Incremental, distance-preserving codeword assignment | lets the vocabulary grow; pure arithmetic once (3) exists |
+| 5 | A state-dependent reward baseline and localized growth | a global scalar cannot allocate credit or capacity across a large vocabulary |
+
+Steps 1 and 2 are the same piece of work and are untried. Steps 3–5 are sized and understood.
 
 ---
 
