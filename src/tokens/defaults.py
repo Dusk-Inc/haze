@@ -230,3 +230,13 @@ TRUSTED_IMPL_PREFIXES = ("haze.modules.encoders.", "haze.modules.decoders.")
 A config field naming an import path is arbitrary code execution on load; see
 specs/packaging.md.
 """
+
+HEAL_MARGIN = 1.15
+"""How far above the conduction floor `applyConductanceHealing` lifts a mute neuron.
+
+Exactly at the floor an edge carries only the top of the signal band and only across a single hop,
+so a healed neuron would fall mute again on the next unlucky observation and healing would become a
+treadmill. The margin is small because lifting further overwrites more of what learning decided:
+the scaling preserves an edge's rank among its siblings whatever the factor, but a large factor
+pushes the whole fan toward the upper rail where differences compress.
+"""

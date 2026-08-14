@@ -15,6 +15,7 @@ from ..errors import (
     SignalDidNotReachMotorsError,
 )
 from ..functions.codebook import toCodeBits
+from ..functions.heal import applyConductanceHealing
 from ..functions.learning import (
     applyCreditedLearning,
     applyLearning,
@@ -174,7 +175,18 @@ class Haze(nn.Module, PyTorchModelHubMixin):
         return output
 
     def learn(self, reward: float, reverse: bool = False) -> LearnResult:
-        """Moves the edges that carried signal toward the reward, and returns what changed."""
+        """Moves the edges that carried signal toward the reward, and returns what changed.
+
+        Healing runs after the move rather than instead of it, so learning is never prevented from
+        weakening an edge — only from weakening it past the point of being expressible at all.
+        """
+        result = self.flowLearnStep(reward, reverse)
+        if self.config.hyper.conductance_healing:
+            result.healed = applyConductanceHealing(self.mesh, self.config.hyper)
+        return result
+
+    def flowLearnStep(self, reward: float, reverse: bool = False) -> LearnResult:
+        """Applies one learning update by whichever rule the configuration selects."""
         self.ensureLearningEnabled()
         if not self._observations:
             raise SignalDidNotReachMotorsError("learn was called before observe")

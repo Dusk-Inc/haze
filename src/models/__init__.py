@@ -15,6 +15,7 @@ from .results import (
     GrowthPlan,
     HazeOutput,
     LearnResult,
+    ScoreProfile,
     PruneReport,
     TrainReport,
 )
@@ -28,6 +29,7 @@ __all__ = [
     "HazeOutput",
     "LabelEntry",
     "LearnResult",
+    "ScoreProfile",
     "MeshCapacity",
     "MeshCounts",
     "PortSpec",

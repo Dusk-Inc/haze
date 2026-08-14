@@ -95,6 +95,31 @@ mesh look more certain precisely when it is guessing, and confidence feeds both 
 signal and the growth trigger. It applies only while learning — `eval()` always answers greedily,
 so exploration never reaches a deployed answer.
 
+### Raw accuracy is not interpretable on its own
+
+**Given** a trained mesh scored on a task
+**When** its result is reported
+**Then** it is reported as coverage, conditional accuracy, and lift against the majority share of
+the *answered* set — never as one accuracy figure.
+
+Two confusions, both live on this branch, and each inflated a reported result before being caught.
+
+**Silence and error score the same.** A trained mesh does both, and one number cannot separate
+them. Measured on `first-set` at three labels, a mesh scoring 0.57 raw is answering 59% of its
+inputs at 96% accuracy — not answering all of them badly. Every "the mesh converged at chance"
+reading on this branch was partly a coverage collapse being read as a learning failure.
+
+**But conditional accuracy alone is worse.** The answered set is chosen by the mesh, and its
+silences fall preferentially on minority labels, so what it keeps is skewed — **83% one label** at
+three labels. Guessing that label scores 0.96 with no skill whatever. Scored against the *task's*
+majority share the lift read +0.46; against the answered set's it is **+0.13**, and fewer than half
+the seeds (18/39) beat their own baseline at all. At nine labels the honest lift is **+0.05**, and
+`crystallize` scores **below** its own baseline.
+
+`calcScoreProfile` returns all four and is the form results are quoted in. `ScoreProfile.lift` is
+the number that says whether the mesh discriminated; a constant answer can only ever match its
+label's share, never beat it, so lift above zero means discrimination and nothing else does.
+
 ### An edge's learning rate hardens with reinforcement and softens with correction
 
 **Given** a fired edge and the move it just made

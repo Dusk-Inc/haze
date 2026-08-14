@@ -246,9 +246,16 @@ square of a strength, not the strength.** Inverting that against `signal_thresho
 | 2 | 0.652 | 0.855 |
 | 3 | 0.726 | 0.889 |
 
+**The floor is exact for a sensor-adjacent edge and an upper bound elsewhere.** It inverts
+attenuation against a signal drawn from the band, which is what a sensor emits. An interneuron's
+arriving value is the *sum* over its incoming edges, so it can exceed the band's ceiling, and edges
+downstream of a well-fed neuron conduct at lower strengths than the table gives. That is why a
+fresh mesh reaches 1.00 while a quarter of its edges sit under the single-hop floor: fan-in
+accumulation carries what no individual weak edge could.
+
 Under the shipped rails — `strength_lower` 0.1, `prune_threshold` 0.2, `strength_upper` 0.9 —
 this leaves a **dead band** at `(0.2, 0.527)`, reported by `HazeHyper.calcDeadBand`. An edge there
-is alive, above the prune threshold, and carries nothing. `ensureNoOrphans` cannot rescue it
+is alive, above the prune threshold, and carries nothing of its own. `ensureNoOrphans` cannot rescue it
 because it is structurally connected; pruning cannot remove it because it is not weak enough. It is
 an absorbing state, because every update is gated on a fired trace and a mute edge fires none.
 

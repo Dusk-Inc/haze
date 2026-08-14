@@ -656,3 +656,55 @@ indistinguishable. The pattern was fitted noise, found on the same sample it was
 in the first sample and 17/40 in the second (25% against 43%). Sixteen seeds cannot estimate the
 rate, let alone correlate against it, and the four- and eight-seed tables quoted throughout this
 log are far noisier than they read.
+
+## Raw accuracy was the wrong metric, and it inflated two results before it was caught
+
+Chasing whether conduction healing worked turned up something that reframes the branch's whole
+measurement basis, and produced two corrections inside an hour — one of them to a claim made in
+this log.
+
+**Silence and error score identically.** A trained mesh both declines to answer and answers wrongly.
+Split apart on `first-set` at three labels, the shipped mesh has coverage 0.59 and **conditional
+accuracy 0.96** — it answers 59% of its inputs and is right on nearly all of them. Read as one
+number that is 0.57 and looks like a mesh converged near chance.
+
+**That reading was too generous, and the correction is the more important half.** The answered set
+is chosen by the mesh, and its silences fall on minority labels, so what it keeps is **83% a single
+label** at three labels and 81% at nine. Guessing that label scores 0.96 with no skill at all.
+Against the honest baseline — the majority share *of the answered set* — the lift is:
+
+| arm | k=3 lift | seeds beating own baseline | k=9 lift | seeds |
+|---|---|---|---|---|
+| shipped | +0.13 | 18/39 | +0.05 | 9/38 |
+| crystallize | +0.11 | 21/40 | **−0.07** | 7/39 |
+| init above floor | +0.15 | 19/40 | +0.04 | 8/40 |
+| **init + heal** | **+0.22** | **28/39** | +0.02 | 9/40 |
+
+So the mesh does not "learn nearly perfectly and abstain" — it narrows to a majority-dominated
+subset and largely guesses within it, which is the original conduction-collapse reading rather than
+the reprieve it briefly looked like. `crystallize` at nine labels scores *below* what guessing the
+majority of its own answered set would.
+
+**Init-above-floor plus conductance healing survives the corrected metric**, which is the one
+mechanism this session that does. Coverage 0.59 → 0.73, and the answered set falls from 83% to
+**70%** one label — a *harder* baseline — while lift rises +0.13 → +0.22 and seeds beating their own
+baseline go 18/39 → 28/39. Answering a less skewed subset better is the opposite of a coverage
+artifact. Nothing moves nine labels: +0.05 → +0.02.
+
+`calcScoreProfile` and `ScoreProfile` land as the form results are quoted in from here.
+
+### The ceiling is mostly representational, which reframes the session's nine mechanisms
+
+The matched probe bound on a *fresh* mesh for the three-label task averages **0.65** across 56
+seeds. The mesh reaches 0.57 raw. **It is already extracting 88% of what a matched linear readout
+could get from the representation**, against a 0.51 majority baseline.
+
+Nine mechanisms were tried this session — credit seeding, supervision, codes, baselines,
+exploration, crystallization, healing, initialization, pruning — and every one targeted the
+learning rule or the mesh's dynamics. If the terminus activation supports only 0.65, none of them
+could have worked, and their small inconsistent gains are what tuning an extractor against a low
+ceiling looks like. The one large gain this branch ever recorded was per-row lanes, which took the
+probe from rank 8/33 to full and moved copy 0.37 → 0.87: a **representation** change.
+
+Full rank with a low bound is the specific thing to explain — the dimensions are present and the
+structure the task needs is not being formed in them.

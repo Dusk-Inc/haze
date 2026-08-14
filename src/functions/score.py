@@ -7,6 +7,7 @@ import torch
 from torch import Tensor
 
 from ..errors import SignalDidNotReachMotorsError
+from ..models import ScoreProfile
 
 Task = Callable[[Sequence[int]], Any]
 
@@ -115,6 +116,44 @@ def calcConductionReach(
         except SignalDidNotReachMotorsError:
             continue
     return reached / len(rows)
+
+
+def calcScoreProfile(
+    answer: Callable[[Sequence[int]], Any], rows: Sequence[Sequence[int]], task: Task
+) -> ScoreProfile:
+    """Returns how much of the task the mesh answered and how well it answered that much.
+
+    The measurement raw accuracy cannot make. A trained mesh both declines to answer and answers
+    wrongly, and one score cannot separate them: measured on `first-set` at three labels, a mesh
+    scoring 0.57 is answering 59% of its inputs at 96% accuracy, not answering all of them badly.
+
+    The baseline is the majority share **of the answered set**, not of the task, because the mesh
+    chooses what it answers. Its silences fall preferentially on minority labels, so the set it
+    keeps is skewed — 83% one label at three labels — and always guessing that label would score
+    0.83 with no skill at all. Scoring conditional accuracy against the task's own majority share
+    reported a lift of +0.46 where the honest figure is +0.13.
+    """
+    answered, correct, seen = 0, 0, []
+    for row in rows:
+        want = task(row)
+        try:
+            got = answer(row)
+        except SignalDidNotReachMotorsError:
+            continue
+        answered += 1
+        seen.append(want)
+        correct += 1 if got == want else 0
+
+    if not rows:
+        return ScoreProfile()
+    if answered == 0:
+        return ScoreProfile(coverage=0.0)
+    return ScoreProfile(
+        coverage=answered / len(rows),
+        accuracy=correct / len(rows),
+        conditional=correct / answered,
+        baseline=max(seen.count(label) for label in set(seen)) / answered,
+    )
 
 
 def calcReachByLabel(

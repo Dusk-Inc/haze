@@ -3,7 +3,13 @@
 import pytest
 
 from haze.errors import SignalDidNotReachMotorsError
-from haze.functions.score import TASKS, calcConductionReach, calcReachByLabel, makeBinaryRows
+from haze.functions.score import (
+    TASKS,
+    calcConductionReach,
+    calcReachByLabel,
+    calcScoreProfile,
+    makeBinaryRows,
+)
 from haze.models import HazeHyper
 
 
@@ -138,3 +144,69 @@ class TestConductionReachError:
 
         with pytest.raises(ValueError):
             calcConductionReach(broken, makeBinaryRows(4, 8, 7))
+
+
+class TestScoreProfileDomain:
+    """Domain: coverage and correctness are separated, and judged against the answered set."""
+
+    def testAPerfectMeshProfilesCleanly(self):
+        """Answering every row correctly gives full coverage and full conditional accuracy."""
+        rows = makeBinaryRows(60, 8, 11)
+        got = calcScoreProfile(TASKS["copy"], rows, TASKS["copy"])
+        assert got.coverage == 1.0
+        assert got.accuracy == 1.0
+        assert got.conditional == 1.0
+
+    def testAbstentionRaisesConditionalAboveRaw(self):
+        """Declining to answer costs coverage and raw accuracy, never conditional accuracy."""
+        rows = makeBinaryRows(200, 8, 12)
+        got = calcScoreProfile(makeAnswerer({0}), rows, TASKS["copy"])
+        assert got.conditional == 1.0
+        assert got.accuracy < 0.6
+        assert got.coverage < 0.6
+
+    def testBaselineIsTakenFromTheAnsweredSet(self):
+        """A mesh that keeps only one label's rows is scored against that label, not the task.
+
+        The confusion this exists to prevent: silencing every minority input leaves a set whose
+        majority share is 1.0, so answering it perfectly is worth no lift at all.
+        """
+        rows = makeBinaryRows(200, 8, 13)
+        got = calcScoreProfile(makeAnswerer({0}), rows, TASKS["copy"])
+        assert got.baseline == 1.0
+        assert got.lift == 0.0
+
+    def testLiftIsPositiveOnlyWhenTheMeshDiscriminates(self):
+        """Answering a mixed set correctly beats guessing its majority label."""
+        rows = makeBinaryRows(200, 8, 14)
+        got = calcScoreProfile(TASKS["copy"], rows, TASKS["copy"])
+        assert got.baseline < 0.7
+        assert got.lift > 0.25
+
+
+class TestScoreProfileBoundary:
+    """Boundary: the degenerate mesh and the degenerate row set."""
+
+    def testAFullyMuteMeshProfilesAtZero(self):
+        """A mesh answering nothing reports no coverage rather than dividing by zero."""
+        rows = makeBinaryRows(40, 8, 15)
+        got = calcScoreProfile(makeAnswerer({0, 1}), rows, TASKS["copy"])
+        assert got.coverage == 0.0
+        assert got.conditional == 0.0
+        assert got.lift == 0.0
+
+    def testNoRowsProfilesAtZero(self):
+        """An empty row set is not an error."""
+        assert calcScoreProfile(makeAnswerer(set()), [], TASKS["copy"]).coverage == 0.0
+
+    def testAConstantAnswerNeverEarnsLift(self):
+        """Answering everything with one label can only ever match its share, never beat it.
+
+        Zero when it picks the majority label and negative when it picks a minority one, which is
+        the property that makes lift readable: only discrimination puts it above zero.
+        """
+        rows = makeBinaryRows(200, 8, 16)
+        for label in (0, 1):
+            got = calcScoreProfile(lambda row: label, rows, TASKS["copy"])
+            assert got.coverage == 1.0
+            assert got.lift <= 0.0

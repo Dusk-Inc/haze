@@ -31,6 +31,45 @@ class LearnResult(BaseModel):
     confidence: float = 0.0
     reverse: bool = False
     mean_delta: float = 0.0
+    healed: int = 0
+    """Neurons whose outgoing edges were scaled back to conducting after the update.
+
+    Zero on every step unless `conductance_healing` is on. A run where this stays high is a mesh
+    being held open against learning that keeps pushing it shut, which is worth seeing rather than
+    silently absorbing. See specs/propagation.md.
+    """
+
+
+class ScoreProfile(BaseModel):
+    """How well a mesh answered a task, separated into how much it answered and how well.
+
+    Raw accuracy alone is not interpretable, because a mesh that declines to answer and one that
+    answers wrongly score identically — and a trained mesh does both. Conditional accuracy alone is
+    not interpretable either, because the answered set is chosen by the mesh: one that keeps only
+    majority-label inputs scores near 1.0 by always guessing that label. Only `lift`, which measures
+    conditional accuracy against the majority share *of the answered set*, says whether the mesh
+    discriminated at all. Both confusions were live on this branch and each inflated a reported
+    result before being caught. See specs/learning.md.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    coverage: float = 0.0
+    """Share of inputs the mesh answered rather than going silent on."""
+
+    accuracy: float = 0.0
+    """Share of all inputs answered correctly, counting a silence as wrong."""
+
+    conditional: float = 0.0
+    """Share of the *answered* inputs answered correctly."""
+
+    baseline: float = 0.0
+    """Majority label's share of the answered inputs — what guessing that label would score."""
+
+    @property
+    def lift(self) -> float:
+        """Returns how far conditional accuracy beat guessing the answered set's majority label."""
+        return self.conditional - self.baseline
 
 
 class GrowthPlan(BaseModel):

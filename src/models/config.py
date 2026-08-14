@@ -72,6 +72,20 @@ class HazeHyper(BaseModel):
     epsilon_cool: float = Field(default=defaults.EPSILON_COOL, gt=0.0, le=1.0)
     epsilon_warm: float = Field(default=defaults.EPSILON_WARM, ge=1.0)
     epsilon_floor: float = Field(default=defaults.EPSILON_FLOOR, gt=0.0, lt=1.0)
+    conductance_healing: bool = False
+    """Whether a neuron whose outgoing edges have all fallen mute is scaled back to conducting.
+
+    False leaves the mesh able to lose pathways permanently, which is what it does today: an edge
+    driven under the signal gate fires no trace, and every learning update is gated on a trace, so
+    nothing can ever move it again. See specs/propagation.md.
+    """
+    heal_margin: float = Field(default=defaults.HEAL_MARGIN, ge=1.0)
+    """How far above the bare conduction floor a healed neuron is lifted.
+
+    Exactly at the floor an edge conducts only the strongest signal in the band and only over one
+    hop, so it would fall mute again on the next unlucky observation. The margin buys the headroom
+    that makes healing settle rather than repeat.
+    """
     prune_threshold: float = Field(default=defaults.PRUNE_THRESHOLD, gt=0.0, lt=1.0)
     growth_rate: float = Field(default=defaults.GROWTH_RATE, gt=0.0, lt=1.0)
     growth_threshold: float = Field(default=defaults.GROWTH_THRESHOLD, gt=0.0, lt=1.0)
@@ -124,6 +138,11 @@ class HazeHyper(BaseModel):
         so a uniform strength `s` over `n` hops arrives at `signal * s**(n+1)` — one hop costs
         roughly the square of a strength, not the strength. Inverting that against
         `signal_threshold` gives the weakest edge that conducts at all, and it rises with depth.
+
+        Exact for an edge carrying a sensor's signal, which the band bounds, and an upper bound
+        elsewhere: an interneuron sums its arrivals, so it can hold a value above the band and its
+        out-edges conduct at lower strengths than this returns. That gap is why a fresh mesh reaches
+        every input while a quarter of its edges sit under this floor.
         """
         return (self.signal_threshold / self.signal_upper) ** (1.0 / (max(hops, 1) + 1))
 
