@@ -10,8 +10,55 @@ sound is still being processed should not be equivalent to both arriving at once
 mesh that stops working should be replaced by new growth rather than dragging the whole network
 down with it.
 
-Five gaps stand between the current model and that goal. The first is the root of the second and
-third and must be taken before either; the last two are independent.
+Six gaps stand between the current model and that goal. The first is the root of the second and
+third and must be taken before either; (3b) sizes the third against the ambition; the last two are
+independent.
+
+---
+
+## Where this stands
+
+**One sentence:** the mesh's failures are now diagnosed rather than guessed at, two of them are
+fixed and shipped on by default, and the remaining ones all reduce to a single untried structural
+change — every input currently uses the whole mesh.
+
+**Built and defaulted on.** `strength_init_lower` 0.55 keeps every edge born above the conduction
+floor; `conductance_healing` scales a neuron's out-edges back over that floor after each update, so
+learning can weaken an edge but never delete it from the mesh's behaviour. Three labels: 13/40 seeds
+learning → 23/40, coverage 0.59 → 0.73, lift +0.13 → +0.22. Two labels and nine labels unmoved,
+measured before taking the change rather than after.
+
+**Built and defaulted off.** `crystallize` — per-edge plasticity with hysteresis, so a section that
+has earned its place hardens and softens only under sustained correction. It removes the task-switch
+death case outright (3/8 seeds → 0/8) and is the only mechanism that has ever moved the seed lottery
+at three labels (3/8 → 6/8). It regresses at nine labels for reasons not yet understood, which is
+the one thing holding it back from being a default.
+
+**Instruments, which turned out to matter more than the mechanisms.** `calcConductionReach` and
+`calcReachByLabel` measure how much of the input space still reaches the motors; `ScoreProfile` and
+`calcScoreProfile` separate coverage from conditional accuracy and score the latter against the
+majority share *of the answered set*. Each of them caught a result that had already been believed
+and was wrong. Test count 176 → 236.
+
+**Diagnosed, not fixed.** Silence is absorbing (1) — learning drives an edge under the gate, a mute
+edge fires no trace, every update is trace-gated, so the state cannot be left. Growth answers an
+absolute error rate and so cannot detect good-turning-bad (2). And the finding that reframes the
+rest: **nine live edges in ten fire on every observation, flat as the mesh grows sixteenfold.**
+Every input uses the whole mesh, so no capacity is allocated per label and every label's learning
+overwrites every other's.
+
+**The honest summary of the effort.** Nine mechanisms were tried against the learning rule and the
+mesh's dynamics. Two of them earned their place; the rest bought small, inconsistent, sometimes
+sign-flipping gains. Against a matched probe bound of 0.65 on a fresh mesh where the mesh itself
+reaches 0.57, that is what tuning an extractor against a ceiling looks like — the ceiling is mostly
+representational, and none of the nine addressed it.
+
+**What is next, in order.** A signal economy where a neuron's arriving value does not depend on its
+fan-in, then input-conditional firing on top of it. That pair is step 1 and 2 of the scaling order
+in (3b), it is the remaining candidate for the conduction collapse in (1), and it is what would make
+growth localizable in (2) — one change standing behind three gaps, and it is untried. Independently
+of all of it, residual mesh state (4) is buildable now at two or three labels and is the gap between
+a task-scorer and the system the goal above describes.
 
 ---
 
@@ -81,13 +128,19 @@ accelerant, and `calcRecoveryMask` does not do the job it exists to do.
   positive push on the correct motor whether it was chosen (gain positive) or not (gain negative).
   That identity is why two labels work at all.
 - **Not the training budget.** Nothing moves between step 1,500 and step 15,000.
-- **Not the representation.** The matched linear probe reads 0.81 off terminus activation on
-  `majority` where the mesh achieves 0.65.
+- **Not *only* the representation** — this entry has since been narrowed. It was written from
+  `majority`, where the probe reads 0.81 against the mesh's 0.65, and that gap is real. On
+  `first-set` at three labels the probe reads **0.65 against the mesh's 0.57**, so there the mesh
+  extracts 88% of what a matched readout could and the headroom is representational rather than
+  extractive. Both are true; which one binds depends on the task, and the conduction collapse below
+  is a separate failure from either.
 
 **The dead band.** Attenuation is `signal × prod(strengths) × geomean(strengths)`, so one hop costs
 roughly the square of an edge strength: `signal × s²` for a single hop. Against the shipped
-`signal_threshold` of 0.25 and a band topping out at 0.9, **an edge below 0.527 cannot conduct at
-any signal**, and deeper paths need more (0.652 at two hops, 0.726 at three). `strength_lower` is
+`signal_threshold` of 0.25 and a band topping out at 0.9, **an edge below 0.527 carries nothing of
+its own**, and deeper paths need more (0.652 at two hops, 0.726 at three). That figure is exact for
+a sensor-adjacent edge and an upper bound deeper in: an interneuron *sums* its arrivals, so it can
+hold a value above the band and feed edges that conduct below the floor. `strength_lower` is
 0.1 and `prune_threshold` is 0.2, so `[0.1, 0.527]` is a range in which an edge is alive,
 unprunable, and mute. That is where eroded edges land: `ensureNoOrphans` cannot see them because
 they are structurally connected, and pruning cannot remove them because they sit above its
@@ -393,6 +446,9 @@ push to the Hub. The packaging itself is built and round-trips bit-identically; 
 presentation around it.
 
 ### Corrections owed in code
-The `calcCodeSeeds` docstring claims the shared gain "is noise rather than bias". The sign is
-right; the magnitude is not — the useful contrast is `4·q^m·(1-q)`, which vanishes exponentially.
-That claim was asserted without measurement and needs rewriting.
+None outstanding. The `calcCodeSeeds` docstring's unmeasured claim that the shared gain "is noise
+rather than bias" has been rewritten around the measured `4·q^m·(1-q)` contrast; `calcCodeWidth` and
+`calcCodeDistance` now record the distance and the cost they actually deliver rather than the ones
+they were designed for; and `setCodedLabels` records that no coded decoder can currently be
+extended. Kept as a heading because the branch has produced four such corrections and will produce
+more — a claim in a docstring that was never measured is the recurring defect here.
