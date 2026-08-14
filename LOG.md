@@ -612,3 +612,47 @@ frozen-policy failure of the inherited `reward - confidence` rule reached by ano
 near that edge, so the parameter is a trade-off and not a knob to turn up.
 
 Default off until the nine-label regression is understood.
+
+## There is no signature of a bad seed at initialization
+
+A seed's outcome looks patterned — seed 3 reads 0.51 at every label count, seed 10 never clears
+0.47 — so sixteen fresh meshes were measured on eight readings taken before any training and
+correlated against their trained accuracy on `first-set` capped at three labels.
+
+The 16-seed result was striking: path depth correlated **+0.651**, share of edges above the
+conduction floor **−0.563**, mean strength **−0.484**, edge count **+0.433**. Screening at
+`hops >= 5.5` kept every good seed and doubled the yield from 25% to 50%. A coherent story came
+with it — deeper paths mean more edges to differentiate over and more redundancy against erosion.
+
+**It does not survive out of sample.** Forty unseen seeds (17-56):
+
+| reading | 16 seeds (fitted) | 40 unseen |
+|---|---|---|
+| hops | +0.651 | **+0.109** |
+| conductive | −0.563 | **+0.232** |
+| strength | −0.484 | **+0.293** |
+| edges | +0.433 | −0.032 |
+| bound | +0.009 | +0.083 |
+| reach, rank, motor_in | 0.000 | 0.000 |
+
+Every correlation collapsed and two flipped sign. Good seeds average 5.52 hops against 5.45 —
+indistinguishable. The pattern was fitted noise, found on the same sample it was derived from.
+
+**Three things this establishes.**
+
+- **Every fresh mesh is structurally identical** on everything that could matter: conduction reach
+  1.00, representation rank 32/32, edges into motors 72, across all 56 seeds. No mesh is born
+  deprived, and no reading available at construction predicts what it will become. Screening for a
+  good mesh before training is not possible, so it is not worth building.
+- **The probe bound has no predictive power** — ~0 in both samples. It answers whether the
+  information is present, never whether the mesh will extract it. Seed 5 holds the lowest bound of
+  its sample (0.47) and is among its best performers; seed 2 holds the highest (0.78) and fails.
+- **Bad seeds are a dynamics problem, not a wiring problem.** What separates meshes is which
+  pathways erode first during training, which is the same conclusion the conduction work reached
+  from the other side, and why crystallization — acting only on training dynamics and doing nothing
+  at initialization — is the only mechanism that has moved the seed lottery.
+
+**A calibration for every other measurement on this branch.** The learned-seed base rate was 4/16
+in the first sample and 17/40 in the second (25% against 43%). Sixteen seeds cannot estimate the
+rate, let alone correlate against it, and the four- and eight-seed tables quoted throughout this
+log are far noisier than they read.
