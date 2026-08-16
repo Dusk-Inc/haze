@@ -370,28 +370,48 @@ to +0.78 with in-degree under the shipped economy, so ranking it selects the bes
 and selects the same ones for every input — sparsity with no capacity allocated, which is exactly
 what the fan-out experiments measured.
 
-### Measured, 8 seeds, fresh meshes, 30 held-out rows
+### Measured, 8 seeds, fresh meshes, 30 held-out rows, shipped hyperparameters otherwise
 
-| arm | fan-in corr | arrival cv | median | firing share | conditionality | reach |
-|---|---|---|---|---|---|---|
-| shipped | +0.672 | 0.94 | 6.09 | 0.889 | +0.0235 | 1.00 |
-| economy, no gain | -0.191 | 1.01 | 0.024 | 0.243 | +0.0223 | **0.00** |
-| economy, gain, gate 0.25 | **+0.150** | 0.53 | 0.113 | 0.656 | **+0.0395** | 0.96 |
-| economy, gain ceiling 20, gate 0.25 | +0.251 | 0.60 | 0.319 | 0.953 | +0.0071 | 1.00 |
+| arm | fan-in corr | arrival cv | depth gain | median arrival | firing share | conditionality | reach |
+|---|---|---|---|---|---|---|---|
+| shipped | +0.672 | 0.94 | 4.52 | 6.085 | 0.889 | +0.0235 | 1.00 |
+| economy, no gain | -0.288 | 1.13 | 0.50 | 0.046 | 0.243 | +0.0225 | **0.00** |
+| economy + gain | **-0.046** | **0.48** | **1.38** | **0.511** | 0.897 | +0.0105 | **1.00** |
 
-The economy without gain control is unusable: the mesh answers nothing. With it, the correlation
-between a neuron's wiring and what arrives at it falls 78%, conditionality rises 68%, and the share
-of edges firing falls from 0.889 to 0.656 **with no ranking applied at all** — the gate begins to
-bite once arrivals are comparable, which is the first time it has done any work.
+The economy without gain control is unusable — the mesh answers nothing, for the reason given in
+the level policy above. With it, the reading the economy exists to produce moves as intended:
+**arrival stops tracking wiring**, correlation +0.672 → -0.046, and the spread across neurons
+roughly halves. The mesh stops amplifying, depth gain 4.52 → 1.38, and median arrival falls from
+6.085 — nearly seven times the top of the signal band — to 0.511, which is inside the band and
+sitting on the neuron gate.
 
-Two readings are short of what the economy was aiming at. The correlation of +0.150 sits at the
-boundary rather than clearly inside it, and the spread across neurons (cv 0.53) remains too wide
-for a rank to be reading relevance alone. A larger gain ceiling makes both worse rather than
-better, which is measured above and not yet explained.
+**`neuron_firing_threshold` needs no change.** It has been recorded here since the tensor rewrite as
+remaining "at its inherited value pending the topology work below". This is that work, and the
+inherited 0.5 turns out to be right: the value was never wrong, the arrivals it judged were. It
+refused nothing when the median was 6.085 and it begins to select now that the median is 0.511.
 
-`neuron_firing_threshold` is 0.5 and must be lowered to about 0.25 for the economy to conduct at
-all. This file has recorded since the tensor rewrite that the value "remains at its inherited value
-pending the topology work below"; this is that work, and the inherited value is wrong for it.
+Two things this does **not** do, and neither is a surprise. Firing share is unchanged at 0.897 —
+the economy is not a sparsifier, and this file predicts it should not be, since removing the
+amplifier also removes the reason the wavefront died out. And conditionality *falls*, +0.0235 →
++0.0105, because nothing yet selects per input; that is what `firing_fraction` is for and it is
+measured separately.
+
+One reading is still short. `arrival_cv` at 0.48 is half what it was but wider than a rank wants,
+so some of what a top-k would select remains neuron-to-neuron variation rather than input.
+
+### The version of this table published first was measured on a bug
+
+`calcIncomingScale` clamped a neuron's budget up to a minimum of one. Shares average roughly the
+reciprocal of a neuron's fan-out, so a real budget is usually *below* one: 64.6% of interneurons
+sat under the clamp, the median true budget was 0.624, and the least-connected were divided by up
+to fourteen times too much. The clamp therefore did the opposite of the economy's purpose, penalising
+exactly the neurons a fan-in normalisation is meant to protect.
+
+It inverted the headline. The clamped version read correlation -0.191 at a median arrival of 0.024
+and could not conduct without lowering the neuron gate to 0.25, which is what the first version of
+this section concluded and recorded. Substituting one only where a neuron has no in-edges at all —
+the only case that would divide by zero — gives the table above. The earlier numbers are wrong and
+are kept here only as the record of the error.
 
 ## An edge below the conduction floor is alive and mute
 

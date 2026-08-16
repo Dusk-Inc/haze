@@ -28,8 +28,11 @@ binds at all.** Median arrival across interneurons measures 4.6-6.5 over 3 seeds
 times this value, so no neuron is ever refused and propagation ends by exhausting the fire-once
 guard instead. That is the mechanism behind nine edges in ten firing on every observation, and it
 is why the gate could be called "far too permissive" for a version of this file and still understate
-the problem. Under `SIGNAL_ECONOMY` arrival is a bounded weighted mean and this threshold becomes
-meaningful again. See specs/propagation.md.
+the problem.
+
+The value turns out to be right and what it judged was wrong. Under `SIGNAL_ECONOMY` with
+`GAIN_CONTROL`, median arrival is 0.511 over 8 seeds — inside the signal band and sitting on this
+threshold — so it begins to select without being retuned. See specs/propagation.md.
 """
 
 STRENGTH_LOWER = 0.1

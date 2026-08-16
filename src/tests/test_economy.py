@@ -17,6 +17,7 @@ from haze.functions.score import (
 from haze.models import ArrivalProfile, FiringProfile, HazeHyper
 from haze.modules.decoders import ArgMax
 from haze.modules.encoders import NumericEncoder
+from haze.tokens import NeuronKind
 
 ECONOMY = {"signal_economy": True, "conductance_healing": False}
 """The smallest configuration that turns the economy on.
@@ -220,6 +221,44 @@ class TestEconomyDomain:
         assert float(moved.min()) < 0.0
 
 
+class TestEconomyIntegration:
+    """Domain: with the economy on, arrival stops tracking wiring and lands inside the band."""
+
+    def testArrivalStopsTrackingFanIn(self):
+        """The correlation the economy exists to remove is removed.
+
+        Measured at +0.672 shipped and -0.046 under the economy over 8 seeds. This is the one
+        structural claim the whole change rests on, so it is asserted rather than recorded.
+        """
+        model, observe = makeObservedModel(seed=5, **ECONOMY, gain_control=True)
+        states = [observe(row) for row in makeBinaryRows(20, 8, seed=501)]
+        assert abs(calcArrivalProfile(model.mesh, states).fanin_correlation) < 0.15
+
+    def testTheMeshStopsAmplifyingAndTheGateBeginsToBind(self):
+        """Arrival falls from seven times the band's ceiling to inside it, onto the neuron gate."""
+        model, observe = makeObservedModel(seed=5, **ECONOMY, gain_control=True)
+        states = [observe(row) for row in makeBinaryRows(20, 8, seed=501)]
+        profile = calcArrivalProfile(model.mesh, states)
+        assert profile.median_arrival < model.config.hyper.signal_upper
+        assert profile.depth_gain < 2.0
+
+    def testTheMeshStillAnswersEveryInput(self):
+        """Conduction is not the price of the economy: a fresh mesh reaches its motors as before."""
+        model, observe = makeObservedModel(seed=5, **ECONOMY, gain_control=True)
+        states = [observe(row) for row in makeBinaryRows(20, 8, seed=501)]
+        assert all(state.reached for state in states)
+
+    def testWithoutGainControlTheMeshGoesSilent(self):
+        """The economy alone cannot conduct, which is why the gain is not optional.
+
+        Only a fraction of a neuron's in-edges fire per hop while the budget counts all of them, so
+        arrival lands an order of magnitude under the gate and nothing emits at the first hop.
+        """
+        model, observe = makeObservedModel(seed=5, **ECONOMY)
+        states = [observe(row) for row in makeBinaryRows(20, 8, seed=501)]
+        assert not any(state.reached for state in states)
+
+
 class TestEconomyBoundary:
     """Boundary: the states that were absorbing under the shipped economy are unreachable."""
 
@@ -243,6 +282,29 @@ class TestEconomyBoundary:
         after = makeSignalEconomy(model.mesh, model.config.hyper).share[siblings]
         assert torch.allclose(after, before, atol=1e-6)
         assert float(after.abs().sum()) == pytest.approx(model.config.hyper.out_budget, abs=1e-5)
+
+    def testABudgetBelowOneIsNotClampedUpToOne(self):
+        """A neuron's real incoming budget is usually under one, and must be used as it is.
+
+        Shares average roughly the reciprocal of a neuron's fan-out, so most budgets fall below
+        one. Clamping up to one — built that way first — replaced the true budget for two
+        interneurons in three, divided the least-connected by up to fourteen times too much, and
+        inverted the correlation the economy exists to remove.
+        """
+        model = makeHaze(nexus_size=64, terminus_size=32, seed=5, **ECONOMY)
+        economy = makeSignalEconomy(model.mesh, model.config.hyper)
+        budgets = economy.in_scale[model.mesh.is_inter]
+        assert float(budgets.min()) < 1.0
+        assert float(budgets.median()) < 1.0
+
+    def testANeuronWithNoIncomingEdgesDividesByOne(self):
+        """The only case a substituted budget covers is the one that would divide by zero."""
+        model = makeHaze(nexus_size=16, terminus_size=8, seed=4, **ECONOMY)
+        sensors = model.mesh.allocNeuronIds(3, NeuronKind.SENSOR, owner=0)
+        economy = makeSignalEconomy(model.mesh, model.config.hyper)
+        assert torch.allclose(
+            economy.in_scale[sensors], torch.ones_like(economy.in_scale[sensors])
+        )
 
     def testTheDeadBandIsUnrepresentable(self):
         """No strength range is alive, unprunable, and mute once strengths are shares."""

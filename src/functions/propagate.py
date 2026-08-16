@@ -323,7 +323,7 @@ def flowSignalPassReference(
             break
 
         totals = {
-            target: sum(c for c, _, _ in incoming) / max(in_scale.get(target, 1.0), 1.0)
+            target: sum(c for c, _, _ in incoming) / (in_scale.get(target) or 1.0)
             for target, incoming in arrivals.items()
         }
         for target, total in totals.items():
