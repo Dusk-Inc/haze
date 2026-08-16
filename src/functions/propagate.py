@@ -28,6 +28,14 @@ class SignalState:
     hops: int = 0
     reached: bool = False
     per_lane_hops: list[int] = field(default_factory=list)
+    frontier: list[float] = field(default_factory=list)
+    """Median magnitude of the emitting frontier after each hop.
+
+    Recorded because whether the mesh amplifies or attenuates with depth is not derivable from the
+    final state — `val` holds only the last frontier, which is usually empty — and it is the
+    reading that says whether `neuron_firing_threshold` binds at all. One median per hop against
+    roughly six edge-length operations per hop, so it does not change the cost of a pass.
+    """
 
     @property
     def lanes(self) -> int:
@@ -206,6 +214,8 @@ def flowSignalPass(
         if not bool(passed.any()):
             break
         state.hops += 1
+        emitting = state.val[state.val != 0].abs()
+        state.frontier.append(float(emitting.median()) if emitting.numel() else 0.0)
 
     state.reached = bool((state.motor_acc > 0).any())
     return state

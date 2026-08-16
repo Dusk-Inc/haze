@@ -72,6 +72,98 @@ class ScoreProfile(BaseModel):
         return self.conditional - self.baseline
 
 
+class FiringProfile(BaseModel):
+    """How much of the mesh one observation used, and how much of that was specific to it.
+
+    The measurement behind the claim that every input uses the whole mesh. Share alone cannot
+    settle it: a mesh could fire few edges and still fire the *same* few for every input, which is
+    sparsity with no capacity allocated and is what both fan-out experiments measured without being
+    able to say so. `conditionality` is the quantity that separates the two, and it is what a
+    change aiming at per-label capacity has to move. See specs/propagation.md.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    share: float = 0.0
+    """Share of live edges that carried signal on an average observation."""
+
+    hops: float = 0.0
+    """Mean hops a propagation ran before no edge passed its gate."""
+
+    neurons: float = 0.0
+    """Mean count of distinct interneurons that emitted signal."""
+
+    within_label_overlap: float = 0.0
+    """Mean Jaccard of the fired-edge sets of two observations sharing a label."""
+
+    between_label_overlap: float = 0.0
+    """Mean Jaccard of the fired-edge sets of two observations with different labels."""
+
+    @property
+    def conditionality(self) -> float:
+        """Returns how much more of the mesh two same-label inputs share than two different ones.
+
+        Zero means the edges an input fires say nothing about its label, so no capacity is
+        allocated per label and every label's learning writes over every other's. Positive means
+        the mesh routes different inputs through different structure, which is the property
+        input-conditional firing exists to create.
+
+        Measured at 0.022-0.028 on a fresh mesh over 3 seeds, against a share of 0.87-0.89 — so
+        nearly nine edges in ten fire for every input and almost none of that is specific to the
+        input. This is the quantity the two fan-out sparsity experiments lacked, which is why they
+        could report that sparsity did not raise the bound without being able to say why.
+        """
+        return self.within_label_overlap - self.between_label_overlap
+
+
+class ArrivalProfile(BaseModel):
+    """What arrives at a neuron, and how much of that is explained by its wiring rather than input.
+
+    The instrument for the signal economy. A mesh whose arriving value tracks fan-in is one where
+    a neuron's influence is set by how well connected it happens to be, so ranking arrivals selects
+    topology rather than relevance — measured at +0.637 on a fresh mesh, which is why top-k over
+    the shipped economy would pick the same clique for every input. See specs/propagation.md.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    fanin_correlation: float = 0.0
+    """Correlation between an interneuron's in-degree and its mean arriving magnitude.
+
+    Measured at +0.69 to +0.78 on a fresh mesh over 3 seeds. A top-k over arrivals at that
+    correlation ranks how well connected a neuron happens to be, which is fixed for the mesh, so
+    the same neurons would win for every input.
+    """
+
+    arrival_cv: float = 0.0
+    """Coefficient of variation of mean arriving magnitude across interneurons.
+
+    Measured at 0.95-1.03 over 3 seeds: the spread across neurons is as large as the mean, so
+    arrivals are not comparable between neurons and nothing can be ranked meaningfully.
+    """
+
+    depth_gain: float = 0.0
+    """Peak median frontier magnitude over the first hop's, across a propagation.
+
+    Peak over first rather than a mean of per-hop ratios, because a pass both climbs and then dies
+    out as the fire-once guard is exhausted, and averaging the two phases together reports 1.27 for
+    a mesh whose frontier tripled. Above one means the mesh amplifies with depth rather than
+    attenuating: measured at 3.1-5.2 over 3 seeds against a signal band topping out at 0.9.
+
+    This is the reading that corrects specs/propagation.md, which states a path's value "only ever
+    multiplies by strengths below one". True per edge, false per neuron: with a mean fan-in of 10
+    and a mean strength of 0.7, a neuron's summed arrival gains where each of its edges lost.
+    """
+
+    median_arrival: float = 0.0
+    """Median arriving magnitude across interneurons.
+
+    Measured at 4.6-6.5 over 3 seeds against a `neuron_firing_threshold` of 0.5, so the neuron gate
+    refuses nothing. Propagation ends by exhausting the fire-once guard rather than by any gate,
+    which is why nine edges in ten fire.
+    """
+
+
 class GrowthPlan(BaseModel):
     """How many interneurons to add to each mesh, and why."""
 

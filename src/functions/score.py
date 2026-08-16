@@ -7,9 +7,11 @@ import torch
 from torch import Tensor
 
 from ..errors import SignalDidNotReachMotorsError
-from ..models import ScoreProfile
+from ..models import ArrivalProfile, FiringProfile, ScoreProfile
+from .propagate import SignalState
 
 Task = Callable[[Sequence[int]], Any]
+Observer = Callable[[Sequence[int]], SignalState]
 
 
 def makeBinaryRows(count: int, width: int, seed: int) -> list[list[int]]:
@@ -176,6 +178,106 @@ def calcReachByLabel(
             continue
     shares = {want: reached.get(want, 0) / count for want, count in total.items()}
     return dict(sorted(shares.items(), key=lambda pair: pair[1]))
+
+
+def calcFiringShare(state: SignalState, live_edges: int) -> float:
+    """Returns the share of live edges that carried signal on one observation.
+
+    The figure specs/propagation.md reports at 0.89-0.91 and which no function computed until now,
+    so it was produced by hand and could not be regression-tested. It is the primary readout for
+    any change aiming to make firing input-conditional.
+    """
+    if live_edges <= 0:
+        return 0.0
+    return float(state.toEdgeTrace().sum()) / live_edges
+
+
+def calcFiringProfile(observe: Observer, rows: Sequence[Sequence[int]], task: Task) -> FiringProfile:
+    """Returns how much of the mesh each observation used, and how much of it was label-specific.
+
+    Takes an observer rather than a model for the same reason `calcScoreProfile` takes an answerer:
+    score.py stays decoupled from how a caller drives propagation.
+
+    The overlap halves are O(pairs), so this is written for tens of rows rather than thousands. A
+    larger sample buys precision on a quantity whose fresh-mesh value is near zero by construction,
+    which is not where the measurement is hard.
+    """
+    if not rows:
+        return FiringProfile()
+
+    traces: list[tuple[Any, torch.Tensor]] = []
+    shares, hops, neurons = [], [], []
+    for row in rows:
+        state = observe(row)
+        live = int(state.fired.shape[1])
+        traces.append((task(row), state.toEdgeTrace()))
+        shares.append(calcFiringShare(state, live))
+        hops.append(float(state.hops))
+        neurons.append(float((state.node_acc.sum(0) != 0).sum()))
+
+    within, between = [], []
+    for left in range(len(traces)):
+        for right in range(left + 1, len(traces)):
+            label_l, trace_l = traces[left]
+            label_r, trace_r = traces[right]
+            union = float((trace_l | trace_r).sum())
+            overlap = float((trace_l & trace_r).sum()) / union if union > 0 else 0.0
+            (within if label_l == label_r else between).append(overlap)
+
+    return FiringProfile(
+        share=sum(shares) / len(shares),
+        hops=sum(hops) / len(hops),
+        neurons=sum(neurons) / len(neurons),
+        within_label_overlap=sum(within) / len(within) if within else 0.0,
+        between_label_overlap=sum(between) / len(between) if between else 0.0,
+    )
+
+
+def calcArrivalProfile(mesh, states: Sequence[SignalState]) -> ArrivalProfile:
+    """Returns how much of what arrives at an interneuron is explained by its wiring.
+
+    Correlating in-degree against arriving magnitude is what says whether a top-k over arrivals
+    would select relevance or merely topology. On the shipped economy it reads +0.637, so it would
+    select topology, and the same neurons would win for every input.
+    """
+    if not states:
+        return ArrivalProfile()
+
+    live = mesh.counts.edges
+    neurons = int(mesh.kind.numel())
+    fanin = torch.zeros(neurons, dtype=mesh.dtype)
+    if live > 0:
+        fanin.index_add_(0, mesh.dst[:live], torch.ones(live, dtype=mesh.dtype))
+
+    arrival = torch.zeros(neurons, dtype=mesh.dtype)
+    for state in states:
+        arrival += state.toNodeActivation().abs()
+    arrival /= len(states)
+
+    inter = mesh.is_inter
+    degree, magnitude = fanin[inter], arrival[inter]
+    gains = [
+        max(state.frontier) / state.frontier[0]
+        for state in states
+        if state.frontier and state.frontier[0] > 0
+    ]
+
+    return ArrivalProfile(
+        fanin_correlation=calcCorrelation(degree, magnitude),
+        arrival_cv=float(magnitude.std() / magnitude.mean()) if float(magnitude.mean()) > 0 else 0.0,
+        depth_gain=sum(gains) / len(gains) if gains else 0.0,
+        median_arrival=float(magnitude.median()) if magnitude.numel() else 0.0,
+    )
+
+
+def calcCorrelation(left: Tensor, right: Tensor) -> float:
+    """Returns the Pearson correlation of two equal-length vectors, or zero if either is constant."""
+    if left.numel() < 2:
+        return 0.0
+    a = left.to(torch.float64) - left.to(torch.float64).mean()
+    b = right.to(torch.float64) - right.to(torch.float64).mean()
+    scale = float(a.norm() * b.norm())
+    return float((a * b).sum() / scale) if scale > 0 else 0.0
 
 
 def fitReadoutProbe(

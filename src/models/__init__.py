@@ -11,7 +11,9 @@ from .config import (
     Stage,
 )
 from .results import (
+    ArrivalProfile,
     AuditResult,
+    FiringProfile,
     GrowthPlan,
     HazeOutput,
     LearnResult,
@@ -21,8 +23,10 @@ from .results import (
 )
 
 __all__ = [
+    "ArrivalProfile",
     "AuditResult",
     "ChainSpec",
+    "FiringProfile",
     "GrowthPlan",
     "HazeConfig",
     "HazeHyper",
