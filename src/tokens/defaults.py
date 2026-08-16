@@ -270,7 +270,14 @@ The reading it answers: interneuron fan-in is mean 10.06 (range 4-66) against a 
 0.715, so a neuron gains where each of its edges lost, and arrival correlates +0.69 to +0.78 with
 in-degree over 3 seeds. A neuron's influence is therefore set by how well connected it happens to
 be rather than by what its inputs said, and nothing downstream can rank arrivals meaningfully.
-See specs/propagation.md.
+
+**It does what it was built for and does not earn a default.** Conduction reach holds at 1.00
+through 1,500 steps at both three and nine labels, against 0.64 and 0.78 shipped — the absorbing
+state of ROADMAP.md's gap 1 removed rather than mitigated. Accuracy falls: lift +0.118 to -0.077 at
+three labels and +0.010 to -0.356 at nine, seeds learning 3/8 to 1/8 and 2/8 to 0/8. The erosion it
+removes was also differentiating the mesh, badly but not randomly, and nothing replaces that.
+Kept reachable and comparable so it can be re-tested against a better learning rule rather than
+re-derived. See specs/propagation.md.
 """
 
 OUT_BUDGET = 1.0
@@ -301,7 +308,14 @@ middle. Scaling every strength cannot change how many neurons a rank admits.
 
 Requires `SIGNAL_ECONOMY`: ranking arrivals that correlate +0.7 with in-degree selects the
 best-connected neurons and selects the same ones for every input, which is sparsity with no
-capacity allocated and is what both fan-out experiments measured. See specs/propagation.md.
+capacity allocated and is what both fan-out experiments measured.
+
+**Measured, and it does not earn a default.** Over the economy it takes the firing share from 0.894
+to 0.333 while conduction reach holds at 0.88-0.97 — sparsity stops costing conduction, which no
+previous attempt achieved. But conditionality only doubles, +0.021 to +0.050, and does not rise as
+the mesh fires less (0.039, 0.030, 0.037, 0.050, 0.042 across fractions 0.05 to 0.60). The winner
+set is largely the same one whatever the input. A rank can only select among distinctions the
+representation already carries, and it carries almost none. See specs/propagation.md.
 """
 
 GAIN_CONTROL = False

@@ -22,6 +22,17 @@ independent.
 fixed and shipped on by default, and the remaining ones all reduce to a single untried structural
 change — every input currently uses the whole mesh.
 
+> **That sentence, and this file's ordering, are refuted below.** The structural change is no longer
+> untried. `signal_economy` was built, and it eliminates the conduction collapse outright — reach
+> holds at **1.00** through 1,500 steps at both three and nine labels, against 0.64 and 0.78 shipped.
+> Accuracy got **worse**: lift +0.118 → -0.077 at three labels and +0.010 → -0.356 at nine, seeds
+> learning 3/8 → 1/8 and 2/8 → 0/8.
+>
+> So **gap 1 is fixable and is not the binding constraint.** This file calls it "the root failure —
+> most of what follows is downstream of it", and that is wrong: closing it completely moved accuracy
+> down. See **The conduction collapse was not the binding constraint** below, which is the load-
+> bearing entry on this branch and supersedes the ordering in the six-gap list.
+
 **Built and defaulted on.** `strength_init_lower` 0.55 keeps every edge born above the conduction
 floor; `conductance_healing` scales a neuron's out-edges back over that floor after each update, so
 learning can weaken an edge but never delete it from the mesh's behaviour. Three labels: 13/40 seeds
@@ -59,6 +70,60 @@ in (3b), it is the remaining candidate for the conduction collapse in (1), and i
 growth localizable in (2) — one change standing behind three gaps, and it is untried. Independently
 of all of it, residual mesh state (4) is buildable now at two or three labels and is the gap between
 a task-scorer and the system the goal above describes.
+
+---
+
+## The conduction collapse was not the binding constraint
+
+**Status:** gap 1 is **solved**, by `signal_economy`, default off because solving it made accuracy
+worse. This entry supersedes the ordering of the six gaps below.
+
+**The mechanism.** A strength becomes a share of what its neuron emits, and an arrival is divided by
+the neuron's static incoming budget. Silence stops being absorbing *by construction* rather than by
+mitigation: a share is a ratio, so scaling every out-edge of a neuron down by any factor leaves what
+it carries unchanged, and no amount of learning can drive an edge out of the mesh's behaviour.
+`calcDeadBand` returns `None` because the concept no longer applies. Details in
+[specs/propagation.md](specs/propagation.md).
+
+**It works, structurally and completely.** 8 seeds, `first-set` capped at `k`, 1,500 steps, held-out
+200 rows:
+
+| k | arm | reach | coverage | conditional | baseline | lift | seeds learning |
+|---|---|---|---|---|---|---|---|
+| 3 | shipped | 0.64 | 0.64 | 0.97 | 0.85 | **+0.118** | 3/8 |
+| 3 | economy | **1.00** | 1.00 | 0.44 | 0.51 | -0.077 | 1/8 |
+| 9 | shipped | 0.78 | 0.78 | 0.68 | 0.67 | +0.010 | 2/8 |
+| 9 | economy | **1.00** | 1.00 | 0.16 | 0.51 | **-0.356** | 0/8 |
+
+Reach 1.00 at nine labels, flat across every checkpoint. No mechanism on this branch has come near
+that. And every accuracy reading moves the wrong way; at nine labels the mesh answers every input at
+0.16 against a majority share of 0.51, which is not declining to learn but confidently learning a
+wrong rule.
+
+**Why closing the collapse cost accuracy, which is the finding.** The erosion was doing two jobs.
+It destroyed reach, and it *differentiated*: a shipped mesh answers 64% of inputs and 85% of what it
+keeps is one label, so what survives is a selected — badly, but not randomly — subset. The economy
+answers everything and its answered set is balanced at 0.51. Removing the collapse removed the
+accidental differentiation with it, and nothing replaced it.
+
+**Deliberate differentiation does not replace it either.** With the economy in place, sparsity is
+affordable for the first time — `firing_fraction` takes the firing share from 0.894 to 0.333 while
+reach holds at 0.88–0.97, where both fan-out attempts lost conduction immediately. But the winner
+set stays largely input-independent. Conditionality (same-label minus different-label Jaccard of the
+fired-edge sets) only doubles, +0.021 → +0.050 at best, and **does not rise with sparsity** —
+0.039, 0.030, 0.037, 0.050, 0.042 across fractions 0.05 to 0.60 is noise, not a trend.
+
+**What this re-orders.** Gap 1 below is not the root of gaps 2 and 3. It is a real defect, it is now
+fixable, and fixing it does not move the label cliff. The remaining candidate is that the mesh has
+no mechanism that makes *different inputs use different structure*, and that neither a signal
+economy nor a rank over arrivals creates one — a rank can only select among distinctions the
+representation already carries, and the measurement says it carries almost none. That points at
+gap 2's missing localisation rather than at anything in this section.
+
+**Left untried**, and named so it is not re-derived: per-neuron adaptive thresholds with a target
+firing rate, so a neuron that keeps winning raises its own bar and usage is forced to spread. It is
+the one remaining idea aimed squarely at the input-independent winner set, and it needs persistent
+per-neuron state and a checkpoint bump.
 
 ---
 

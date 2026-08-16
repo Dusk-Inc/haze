@@ -399,6 +399,59 @@ measured separately.
 One reading is still short. `arrival_cv` at 0.48 is half what it was but wider than a rank wants,
 so some of what a top-k would select remains neuron-to-neuron variation rather than input.
 
+### Trained, and the economy does not earn a default
+
+8 seeds, `first-set` capped at `k`, 1,500 steps, 200 held-out rows, no growth or pruning:
+
+| k | arm | reach | coverage | conditional | baseline | lift | seeds learning |
+|---|---|---|---|---|---|---|---|
+| 3 | shipped | 0.64 | 0.64 | 0.97 | 0.85 | **+0.118** | 3/8 |
+| 3 | economy | **1.00** | 1.00 | 0.44 | 0.51 | -0.077 | 1/8 |
+| 9 | shipped | 0.78 | 0.78 | 0.68 | 0.67 | +0.010 | 2/8 |
+| 9 | economy | **1.00** | 1.00 | 0.16 | 0.51 | **-0.356** | 0/8 |
+
+**The collapse is gone.** Reach holds at 1.00 across every checkpoint at nine labels, where the
+shipped mesh erodes to 0.78. That is the absorbing state removed rather than mitigated, and it is
+what the economy was built for.
+
+**Every accuracy reading moves the wrong way**, so it ships default-off with the measurement rather
+than as a default, in the same disposition as `crystallize` and `CodeBook`: reachable, tested,
+comparable, and re-testable against a better learning rule instead of re-derived.
+
+The two arms are not scored on the same answered set, and the difference is the finding rather than
+a caveat. A shipped mesh answers 64% of inputs at k=3 and 85% of what it keeps is one label. The
+economy answers everything, and its answered set is balanced at 0.51. **The erosion was
+differentiating** — badly, but not randomly — and removing it removed that with it. Conduction was
+never what bounded accuracy here.
+
+### Ranking is affordable now, and still does not select the input
+
+`firing_fraction` over the economy, 8 seeds, fresh meshes, three labels:
+
+| fraction | firing share | conditionality | reach | arrival cv | fan-in corr |
+|---|---|---|---|---|---|
+| off | 0.894 | +0.0214 | 1.00 | 0.47 | -0.037 |
+| 0.05 | **0.333** | +0.0390 | 0.88 | 0.80 | -0.187 |
+| 0.10 | 0.335 | +0.0299 | 0.89 | 0.77 | -0.187 |
+| 0.20 | 0.347 | +0.0373 | 0.90 | 0.72 | -0.179 |
+| 0.40 | 0.469 | **+0.0496** | 0.96 | 0.55 | -0.146 |
+| 0.60 | 0.666 | +0.0416 | 0.97 | 0.50 | -0.079 |
+
+**Sparsity no longer costs conduction**, which is new. Firing share falls to a third while reach
+holds at 0.88–0.97; both fan-out experiments lost the mesh's answers the moment they fired less.
+That is what the economy bought.
+
+**And the winner set is still largely the same one for every input.** Conditionality roughly
+doubles and stops there, and it does not rise as the mesh fires less — the ordering across fractions
+is 0.039, 0.030, 0.037, 0.050, 0.042, which is noise. Sparsity that does not raise conditionality is
+sparsity with no capacity allocated, which is exactly the reading the two earlier experiments
+lacked.
+
+A rank can only select among distinctions the representation already carries. The measurement says
+it carries almost none, so the remaining work is whatever makes different inputs use different
+structure in the first place, and neither a signal economy nor a rank over arrivals is that.
+`firing_fraction` therefore also ships default-off.
+
 ### The version of this table published first was measured on a bug
 
 `calcIncomingScale` clamped a neuron's budget up to a minimum of one. Shares average roughly the

@@ -911,3 +911,68 @@ Lockstep is parametrized over shipped, economy, ranked and gained at 6 seeds eac
 assertions rather than 6 — because the economy changes what an edge carries, what a neuron divides
 by, which neurons emit, and at what level, and those are four places the two engines could drift
 apart independently.
+
+### The conduction collapse is fixed, and the label cliff did not move
+
+The result the economy was built to produce, and the one that matters is the second half. 8 seeds,
+`first-set` capped at `k`, 1,500 steps, 200 held-out rows, no growth or pruning:
+
+| k | arm | reach | coverage | conditional | baseline | lift | seeds learning |
+|---|---|---|---|---|---|---|---|
+| 3 | shipped | 0.64 | 0.64 | 0.97 | 0.85 | **+0.118** | 3/8 |
+| 3 | economy | **1.00** | 1.00 | 0.44 | 0.51 | -0.077 | 1/8 |
+| 9 | shipped | 0.78 | 0.78 | 0.68 | 0.67 | +0.010 | 2/8 |
+| 9 | economy | **1.00** | 1.00 | 0.16 | 0.51 | **-0.356** | 0/8 |
+
+Reach 1.00 at nine labels, flat at every checkpoint, against a shipped mesh that erodes to 0.78. No
+mechanism on this branch has come close. And every accuracy reading moves the wrong way; at nine
+labels the mesh answers every input at 0.16 against a majority share of 0.51 — by the standard this
+file already set for `epsilon_start`, that is confidently learning a wrong rule rather than
+declining to learn.
+
+**So ROADMAP.md's ordering is wrong.** It calls gap 1 "the root failure — most of what follows is
+downstream of it". Gap 1 is now solved, structurally and completely, and closing it moved accuracy
+down at both label counts. **Conduction was never what bounded accuracy.**
+
+**Why, and this is the part worth keeping.** The erosion was doing two jobs. It destroyed reach, and
+it *differentiated*: a shipped mesh answers 64% of inputs at three labels and 85% of what it keeps
+is one label, so the surviving set is selected — badly, but not randomly. The economy answers
+everything and its answered set is balanced at 0.51. Removing the collapse removed the accidental
+differentiation with it, and nothing replaced it. The mesh that conducts perfectly is the mesh with
+nothing to say.
+
+**Deliberate differentiation does not replace it either.** `firing_fraction` over the economy takes
+the firing share from 0.894 to 0.333 while reach holds at 0.88-0.97 — **sparsity no longer costs
+conduction**, which is genuinely new, since both fan-out experiments lost the mesh's answers the
+moment they fired less. But conditionality only doubles, +0.021 to +0.050 at best, and does not rise
+as the mesh fires less: 0.039, 0.030, 0.037, 0.050, 0.042 across fractions 0.05 to 0.60 is noise
+rather than a trend. The winner set is largely the same one whatever the input.
+
+A rank can only select among distinctions the representation already carries, and the measurement
+says it carries almost none. That is the same conclusion the probe reached from the other side —
+the ceiling is representational — arrived at now from firing rather than from a readout.
+
+**Both mechanisms ship default-off with their numbers**, in the disposition `crystallize` and
+`CodeBook` already have: reachable, tested, comparable, and re-testable against a better learning
+rule rather than re-derived. Neither is a candidate for a default under the current rule.
+
+**Left untried and named so it is not re-derived:** per-neuron adaptive thresholds with a target
+firing rate, so a neuron that keeps winning raises its own bar and usage is forced to spread. It
+needs persistent per-neuron state and a checkpoint bump, and it is the one remaining idea aimed
+squarely at an input-independent winner set.
+
+**A fifth defect, found by the result rather than by a test.** `calcNeuronCredit` spreads the
+teaching signal backward "attenuated by the same strengths the forward pass used" — its own
+docstring, and a real invariant. Under the economy the forward pass carries shares and this still
+read `mesh.strength`, so credit travelled along weights no signal took. Fixed before the table
+above was taken. The pre-fix run reported reach 1.00 with lift -0.318 at nine labels; correcting it
+improved conduction further and left the learning verdict unchanged, so the trade-off is real and
+not an artefact of the defect.
+
+**A correction to this file and to ROADMAP.md.** Gap 1's headline table — reach falling to 0.51 by
+step 1000 at nine labels — predates `strength_init_lower` 0.55 and `conductance_healing`. Shipped
+today it is 0.88 at step 1000 and 0.78 at 1500 over 8 seeds; reverting both defaults reproduces
+0.62, so the mitigations account for the gap and the residual is the four-seed sample. That also
+refutes the claim that the pair leaves nine labels "unmoved" — true for accuracy, which is what it
+was checked on, false for conduction, where it is worth +0.26 reach. The section making that claim
+is the one arguing at length that accuracy cannot see this failure.
