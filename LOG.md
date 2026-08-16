@@ -789,3 +789,125 @@ keeps it alive. Fan-out sparsity was measured against that economy twice and los
 Changing the economy, so a neuron's arriving value does not depend on how many edges fed it, is
 what would make sparsity affordable. It is untried, and it is the same per-neuron normalisation
 already listed as a remaining candidate for the conduction collapse.
+
+---
+
+### The mesh amplifies, and the neuron gate has never once refused anything
+
+Written while building the instruments that ROADMAP.md's next step is judged by, and it changed
+what that step is for. Measured on a fresh mesh, `nexus_size=64`, `terminus_size=32`:
+
+| quantity | measured |
+|---|---|
+| interneuron fan-in | mean 10.06, sd 6.53, range 4-66 |
+| mean \|strength\| | 0.715 |
+| frontier median by hop, seed 5 | 1.34 → 2.08 → 4.35 → 3.14 → 0.89 |
+| peak frontier over first hop | 3.1-5.2 over 3 seeds |
+| median arrival across interneurons | 4.6-6.5 over 3 seeds |
+| `neuron_firing_threshold` | 0.5 |
+| signal band ceiling | 0.9 |
+
+This file and specs/propagation.md have both stated the open problem as "a path's value only ever
+multiplies by strengths below one and convergence is what keeps it alive". **That is true per edge
+and false per neuron.** A neuron sums roughly ten arrivals of mean strength 0.7, so it gains about
+sevenfold where each of its edges lost, and the frontier climbs to five times the band it started
+in.
+
+Two consequences, and both re-read earlier entries rather than adding to them.
+
+**The neuron gate is dead code.** Arrivals sit nine to thirteen times above the threshold meant to
+refuse them. Nine edges in ten fire not because the gate is permissive but because nothing is ever
+refused and propagation ends by exhausting the fire-once guard. The defaults file called 0.5 "far
+too permissive" and needing "recalibration upward"; that understated it — a threshold that never
+binds is not mis-set, it is absent.
+
+**Fan-in is the mesh's only amplifier, which is why sparsity killed conduction both times.** The
+fan-out experiments did not remove a compensation for a lossy path. They removed the gain. That is
+also why edge activation went bimodal with no stable middle: an amplifier with a hard threshold on
+its output has two fixed points and no third.
+
+So the remedy is not to make signal cheaper to carry, which is what "changing the economy" was
+taken to mean. It is to stop taking gain from topology and set the level explicitly.
+
+### Conditionality, and what share alone could never say
+
+`calcFiringShare`, `calcFiringProfile` and `calcArrivalProfile` ship as instruments. The share was
+quoted here at 0.89-0.91 and no function computed it, so it was produced by hand and could not be
+regression-tested.
+
+The new quantity is **conditionality**: same-label minus different-label Jaccard of the fired-edge
+sets. On a fresh mesh it reads **+0.022 to +0.028 over 3 seeds against a share of 0.87-0.89**.
+Nearly nine edges in ten fire for every input, and almost none of that is specific to the input.
+
+That is the direct statement of "every input uses the whole mesh", and it is the measurement the
+two fan-out experiments lacked. They could report that sparsity did not raise the bound without
+being able to say why, because a share cannot distinguish a mesh that fires few edges *per input*
+from one that fires the same few edges *for every* input. Only the second is capacity allocation,
+and it is what a rank has to produce.
+
+`depth_gain` is peak-over-first rather than a mean of per-hop ratios. The mean conflates the climb
+with the die-out and reports 1.27 for a mesh whose frontier tripled; that version was built first
+and measured before it was kept.
+
+### The signal economy, and the three things built wrong on the way
+
+`signal_economy`, default off. A strength becomes a share of what its neuron emits, an arrival is
+divided by a **static** incoming budget, and the geometric-mean correction is dropped because it
+corrects a decay the mesh no longer applies. Computed per pass and stored nowhere, so
+`mesh.strength` is never rewritten, no checkpoint changes, and the learning, plasticity and
+structure suites are untouched by construction.
+
+Static is the whole distinction. A denominator counting the edges that *actually fired* is the
+fan-in mean, and two features arriving would then produce what one does — the collapse the
+per-observation lane was introduced to prevent. Static leaves that intact and removes only the
+topological advantage of a well-connected neuron. **Capacity is normalised away; coincidence is
+kept.** The roadmap's "arriving value does not depend on fan-in" and this file's "interneurons
+genuinely accumulate fan-in" are about different senses of the word and are not in conflict.
+
+An edge can no longer be driven mute, because a share is a ratio: scaling every out-edge of a
+neuron down by any factor leaves what it carries unchanged. Gap 1's absorbing state becomes
+unrepresentable rather than mitigated, so `calcDeadBand` returns `None` and `conductance_healing`
+is refused alongside the economy instead of silently becoming a no-op.
+
+Three defects, each of which measured as working:
+
+1. **The gain control ran after the neuron gate.** It measured identical to no gain at all, for a
+   reason that is obvious afterwards — rescaling what already passed cannot restore the level that
+   is the reason nothing passed.
+2. **The rank ranked a different population than the reference did**, and the path statistics
+   divided by the normalised arrival where the reference divided by the raw sum. Both put the two
+   engines out of step by a factor of the incoming budget, and **neither would have failed the
+   lockstep test**, because `slog` and `plen` are unused once the correction is dropped. Found by
+   reading, not by testing.
+3. **The incoming budget was clamped up to a minimum of one.** Shares average roughly the
+   reciprocal of a neuron's fan-out, so a real budget is usually *below* one: 64.6% of interneurons
+   sat under the clamp, the median true budget is 0.624, and the least-connected were divided by up
+   to fourteen times too much. The clamp did the opposite of the economy's purpose, penalising
+   exactly the neurons a fan-in normalisation exists to protect.
+
+The third inverted the published result, so a table was committed and corrected one commit later.
+8 seeds, fresh meshes, 30 held-out rows, shipped hyperparameters otherwise:
+
+| arm | fan-in corr | cv | depth gain | median arrival | share | conditionality | reach |
+|---|---|---|---|---|---|---|---|
+| shipped | +0.672 | 0.94 | 4.52 | 6.085 | 0.889 | +0.0235 | 1.00 |
+| economy, no gain | -0.288 | 1.13 | 0.50 | 0.046 | 0.243 | +0.0225 | **0.00** |
+| economy + gain | **-0.046** | 0.48 | 1.38 | **0.511** | 0.897 | +0.0105 | 1.00 |
+| clamped budget (wrong) | -0.191 | 1.01 | — | 0.024 | 0.243 | +0.0223 | 0.00 |
+
+**`neuron_firing_threshold` needs no change**, which reverses what the first version of this entry
+concluded. This file has recorded since the tensor rewrite that the value "remains at its inherited
+value pending the topology work below". This is that work, and 0.5 turns out to be right: the
+threshold was never wrong, the arrivals it judged were. It refused nothing at a median of 6.085 and
+begins to select at 0.511.
+
+The economy is not a sparsifier and firing share is unchanged at 0.897, which is the predicted
+result rather than a disappointing one — removing the amplifier also removes the reason the
+wavefront died out. Conditionality *falls*, because nothing yet selects per input; that is
+`firing_fraction`'s job and it is measured separately. One reading is still short: `arrival_cv` at
+0.48 is half what it was but wider than a rank wants.
+
+Lockstep is parametrized over shipped, economy, ranked and gained at 6 seeds each — 24 equivalence
+assertions rather than 6 — because the economy changes what an edge carries, what a neuron divides
+by, which neurons emit, and at what level, and those are four places the two engines could drift
+apart independently.
