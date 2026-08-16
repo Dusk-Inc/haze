@@ -210,7 +210,7 @@ def switchMotorChoice(states: Tensor, rate: float, generator: torch.Generator) -
 
 
 def calcNeuronCredit(
-    mesh, trace: Tensor, seeds: dict[int, float], hops: int
+    mesh, trace: Tensor, seeds: dict[int, float], hops: int, strength: Tensor | None = None
 ) -> Tensor:
     """Spreads a per-motor teaching signal backward along the edges that carried signal.
 
@@ -218,6 +218,12 @@ def calcNeuronCredit(
     fired edges, attenuated by the same strengths the forward pass used, so a neuron's credit is
     how much it fed the motors that were rewarded. It costs one extra scatter per hop over the
     same edge list the forward pass walks.
+
+    "The same strengths the forward pass used" is a real invariant and not a turn of phrase. Under
+    `signal_economy` the forward pass carries shares rather than raw strengths, so the caller must
+    pass those shares here; leaving this reading `mesh.strength` sends credit backward along
+    weights the signal never travelled, and a neuron's credit stops meaning how much it fed the
+    motors at all.
     """
     neurons = int(mesh.kind.numel())
     credit = torch.zeros(neurons, dtype=mesh.dtype)
@@ -231,7 +237,7 @@ def calcNeuronCredit(
         return credit
 
     src, dst = mesh.src[:live], mesh.dst[:live]
-    strength = mesh.strength[:live]
+    strength = mesh.strength[:live] if strength is None else strength[:live]
     fired = trace[:live]
     zero = torch.zeros(live, dtype=mesh.dtype)
 

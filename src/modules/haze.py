@@ -15,6 +15,7 @@ from ..errors import (
     SignalDidNotReachMotorsError,
 )
 from ..functions.codebook import toCodeBits
+from ..functions.economy import makeSignalEconomy
 from ..functions.heal import applyConductanceHealing
 from ..functions.learning import (
     applyCreditedLearning,
@@ -239,7 +240,10 @@ class Haze(nn.Module, PyTorchModelHubMixin):
             weight = state.toEdgeEligibility()
             eligibility[: weight.numel()] += weight
 
-        credit = calcNeuronCredit(self.mesh, trace, seeds, hops)
+        economy = makeSignalEconomy(self.mesh, self.config.hyper)
+        credit = calcNeuronCredit(
+            self.mesh, trace, seeds, hops, None if economy is None else economy.share
+        )
         return applyCreditedLearning(
             self.mesh, trace, eligibility, credit, reward, confidence, self.config.hyper
         )
