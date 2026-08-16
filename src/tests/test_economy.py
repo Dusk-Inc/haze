@@ -4,6 +4,7 @@ import pytest
 import torch
 
 from haze import makeHaze
+from haze.functions.economy import calcArrivalGate, makeSignalEconomy
 from haze.functions.propagate import flowSignalPass
 from haze.functions.score import (
     TASKS,
@@ -13,9 +14,17 @@ from haze.functions.score import (
     calcFiringShare,
     makeBinaryRows,
 )
-from haze.models import ArrivalProfile, FiringProfile
+from haze.models import ArrivalProfile, FiringProfile, HazeHyper
 from haze.modules.decoders import ArgMax
 from haze.modules.encoders import NumericEncoder
+
+ECONOMY = {"signal_economy": True, "conductance_healing": False}
+"""The smallest configuration that turns the economy on.
+
+Healing must go off with it, and that pairing is enforced rather than conventional: a uniform
+scale of a neuron's out-edges cancels exactly in a normalised share, so healing under the economy
+would run on every update and change nothing.
+"""
 
 
 def makeObservedModel(seed: int, features: int = 8, **hyper):
@@ -177,6 +186,111 @@ class TestCorrelationError:
     def testASingleObservationCorrelatesWithNothing(self):
         """One point defines no relationship."""
         assert calcCorrelation(torch.tensor([1.0]), torch.tensor([2.0])) == 0.0
+
+
+class TestEconomyDomain:
+    """Domain: a strength becomes a share, so what a neuron carries stops being absolute."""
+
+    def testSiblingsShareOneBudget(self):
+        """A neuron's outgoing shares sum to `out_budget`, whatever its strengths were."""
+        model = makeHaze(nexus_size=16, terminus_size=8, seed=4, **ECONOMY)
+        economy = makeSignalEconomy(model.mesh, model.config.hyper)
+        live = model.mesh.counts.edges
+        total = torch.zeros(int(model.mesh.kind.numel()), dtype=model.mesh.dtype)
+        total.index_add_(0, model.mesh.src[:live].to(torch.int64), economy.share.abs())
+        emitting = total[total > 0]
+        assert torch.allclose(emitting, torch.full_like(emitting, model.config.hyper.out_budget))
+
+    def testLearningIsZeroSumAmongSiblings(self):
+        """Raising one edge lowers every sibling's share, rather than draining the neuron.
+
+        The property ROADMAP.md names as the candidate remedy for gap 1, here as a consequence of
+        the representation rather than as a mechanism of its own.
+        """
+        model = makeHaze(nexus_size=16, terminus_size=8, seed=4, **ECONOMY)
+        before = makeSignalEconomy(model.mesh, model.config.hyper).share.clone()
+        edge = int((model.mesh.src[: model.mesh.counts.edges] == int(model.mesh.src[0])).nonzero()[0])
+        siblings = model.mesh.src[: model.mesh.counts.edges] == model.mesh.src[edge]
+
+        model.mesh.strength[edge] = model.config.hyper.strength_upper
+        after = makeSignalEconomy(model.mesh, model.config.hyper).share
+        moved = after[siblings].abs() - before[siblings].abs()
+        assert float(moved.sum()) == pytest.approx(0.0, abs=1e-5)
+        assert float(moved.max()) > 0.0
+        assert float(moved.min()) < 0.0
+
+
+class TestEconomyBoundary:
+    """Boundary: the states that were absorbing under the shipped economy are unreachable."""
+
+    def testAnEdgeCannotBeDrivenMute(self):
+        """Scaling every out-edge of a neuron to the lower rail leaves what it carries unchanged.
+
+        This is ROADMAP.md gap 1 closed by construction. Under the shipped economy learning can
+        push an edge below the conduction floor, and since a mute edge fires no trace and every
+        update is trace-gated, nothing can ever recover it. A share is a ratio, so the same
+        collapse is not expressible.
+        """
+        model = makeHaze(nexus_size=16, terminus_size=8, seed=4, **ECONOMY)
+        live = model.mesh.counts.edges
+        siblings = model.mesh.src[:live] == int(model.mesh.src[0])
+        before = makeSignalEconomy(model.mesh, model.config.hyper).share[siblings].clone()
+
+        weakened = model.mesh.strength[:live].clone()
+        weakened[siblings] *= 0.01
+        model.mesh.strength[:live] = weakened
+
+        after = makeSignalEconomy(model.mesh, model.config.hyper).share[siblings]
+        assert torch.allclose(after, before, atol=1e-6)
+        assert float(after.abs().sum()) == pytest.approx(model.config.hyper.out_budget, abs=1e-5)
+
+    def testTheDeadBandIsUnrepresentable(self):
+        """No strength range is alive, unprunable, and mute once strengths are shares."""
+        assert HazeHyper(**ECONOMY).calcDeadBand() is None
+        assert HazeHyper().calcDeadBand() is not None
+
+
+class TestEconomyError:
+    """Error: a configuration that would make a mechanism dead code is refused."""
+
+    def testRankingNeedsTheEconomy(self):
+        """Ranking arrivals that track in-degree selects topology, so it is refused without it."""
+        with pytest.raises(ValueError, match="firing_fraction needs signal_economy"):
+            HazeHyper(firing_fraction=0.2)
+
+    def testGainControlNeedsTheEconomy(self):
+        """The gain restores a level only the economy removes."""
+        with pytest.raises(ValueError, match="gain_control needs signal_economy"):
+            HazeHyper(gain_control=True)
+
+    def testHealingIsRefusedAlongsideTheEconomy(self):
+        """A uniform scale of a neuron's out-edges cancels in a share, so healing would do nothing.
+
+        A deliberate trip-wire rather than a silent no-op: the flag cannot be turned on while a
+        mechanism it makes inert is still claiming to run.
+        """
+        with pytest.raises(ValueError, match="incompatible"):
+            HazeHyper(signal_economy=True, conductance_healing=True)
+
+
+class TestEconomyChaos:
+    """Chaos: the rank stays order-free where every arrival is identical."""
+
+    def testTiedStrengthsDoNotDependOnOrdering(self):
+        """A mesh whose strengths are all equal ranks by value, so ties all pass together.
+
+        The k-th-value formulation is what makes this true. Taking `topk` indices instead would
+        break the tie arbitrarily and put the tensor engine and the plain-Python reference, which
+        has no stable ordering, silently out of step.
+        """
+        model = makeHaze(nexus_size=16, terminus_size=8, seed=4, **ECONOMY, firing_fraction=0.25)
+        model.mesh.strength[: model.mesh.counts.edges] = 0.5
+        model.mesh.log_str[: model.mesh.counts.edges] = torch.tensor(0.5).abs().log()
+
+        arrived = torch.full((1, int(model.mesh.kind.numel())), 0.3, dtype=model.mesh.dtype)
+        gate = model.mesh.is_inter.unsqueeze(0).clone()
+        allowed = calcArrivalGate(arrived, gate, model.mesh.is_nexus, model.config.hyper)
+        assert bool((allowed == gate).all())
 
 
 class TestFrontierChaos:

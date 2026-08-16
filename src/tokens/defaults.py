@@ -23,9 +23,13 @@ signal rather than muting weak inputs at the sensors.
 NEURON_FIRING_THRESHOLD = 0.5
 """Neuron gate: accumulated arrivals below this are discarded rather than emitted.
 
-Carried over from the prior engine and known to need recalibration upward, because
-interneurons now genuinely accumulate fan-in where previously the buffer was cleared on
-every call. Set by the Phase 3 sweep recorded in specs/propagation.md.
+Carried over from the prior engine, and it does not merely need recalibrating upward — **it never
+binds at all.** Median arrival across interneurons measures 4.6-6.5 over 3 seeds, nine to thirteen
+times this value, so no neuron is ever refused and propagation ends by exhausting the fire-once
+guard instead. That is the mechanism behind nine edges in ten firing on every observation, and it
+is why the gate could be called "far too permissive" for a version of this file and still understate
+the problem. Under `SIGNAL_ECONOMY` arrival is a bounded weighted mean and this threshold becomes
+meaningful again. See specs/propagation.md.
 """
 
 STRENGTH_LOWER = 0.1
@@ -248,4 +252,79 @@ so a healed neuron would fall mute again on the next unlucky observation and hea
 treadmill. The margin is small because lifting further overwrites more of what learning decided:
 the scaling preserves an edge's rank among its siblings whatever the factor, but a large factor
 pushes the whole fan toward the upper rail where differences compress.
+"""
+
+
+SIGNAL_ECONOMY = False
+"""Whether a strength is read as a share of its neuron's output rather than as an absolute.
+
+Off until measured, which is the house pattern. It changes three things at once: an edge carries a
+share of what its source emits, a neuron's arrival is divided by its static incoming budget, and
+the geometric-mean path correction is dropped because it corrects a decay the mesh no longer
+applies.
+
+The reading it answers: interneuron fan-in is mean 10.06 (range 4-66) against a mean |strength| of
+0.715, so a neuron gains where each of its edges lost, and arrival correlates +0.69 to +0.78 with
+in-degree over 3 seeds. A neuron's influence is therefore set by how well connected it happens to
+be rather than by what its inputs said, and nothing downstream can rank arrivals meaningfully.
+See specs/propagation.md.
+"""
+
+OUT_BUDGET = 1.0
+"""Total magnitude a neuron's outgoing edges sum to under the economy.
+
+Governs competition among siblings, **not** the level of the signal — the outgoing and incoming
+scalings cancel in level, which is set by the incoming budget alone. What the budget buys is that
+raising one edge lowers every sibling's share, so learning becomes locally zero-sum, and that an
+edge can never be mute: a share is a ratio, so driving every out-edge of a neuron to
+`STRENGTH_LOWER` leaves the shares unchanged. That is the absorbing state of ROADMAP.md's gap 1
+closed by construction rather than mitigated.
+"""
+
+EDGE_SIGNAL_FLOOR = 0.01
+"""Magnitude below which an edge carries nothing under the economy.
+
+A numerical floor and explicitly not a selection device. Under the shipped economy the edge gate
+doubles as the sparsifier; under this one selection belongs to the neuron, where it can be ranked
+rather than thresholded, so this only stops denormal values propagating.
+"""
+
+FIRING_FRACTION = 0.0
+"""Share of each interneuron population allowed to emit per hop. Zero disables the ranking.
+
+Ranked rather than thresholded because a hard threshold on arrival was measured to go bimodal —
+raising strengths admits more edges, which accumulates more, which admits more, with no stable
+middle. Scaling every strength cannot change how many neurons a rank admits.
+
+Requires `SIGNAL_ECONOMY`: ranking arrivals that correlate +0.7 with in-degree selects the
+best-connected neurons and selects the same ones for every input, which is sparsity with no
+capacity allocated and is what both fan-out experiments measured. See specs/propagation.md.
+"""
+
+GAIN_CONTROL = False
+"""Whether a hop's emitted wavefront is rescaled toward the band after ranking.
+
+Silencing part of a wavefront lowers what the next hop receives, because the incoming budget it
+divides by is static and does not shrink with the survivors. Ordering and level are separate jobs:
+the rank decides which neurons emit and one scalar per hop decides how loud. A single scalar
+cannot reorder anything, so it cannot interfere with the selection it follows.
+"""
+
+GAIN_TARGET = 0.65
+"""Mean magnitude a rescaled wavefront is aimed at, at the middle of the signal band."""
+
+GAIN_CEILING = 4.0
+"""Most the gain may multiply a wavefront by.
+
+Bounds the failure mode where a nearly-dead pass is amplified into a confident answer. Its
+signature is coverage high and lift negative, which is worse than going silent because a silence is
+visible in `calcConductionReach` and a confident wrong answer is not.
+"""
+
+PRUNE_SHARE = 0.05
+"""Share of its neuron's output below which an edge is pruned under the economy.
+
+Relative because the absolute `PRUNE_THRESHOLD` names the wrong thing once strengths are shares: an
+edge at 0.1 whose siblings are all 0.1 carries a full share of its neuron's output and is doing its
+job, yet an absolute threshold would delete it.
 """

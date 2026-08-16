@@ -106,6 +106,16 @@ class MeshState(nn.Module):
         """Returns a mask over the slab selecting interneurons of either mesh."""
         return (self.kind == int(NeuronKind.NEXUS)) | (self.kind == int(NeuronKind.TERMINUS))
 
+    @property
+    def is_nexus(self) -> Tensor:
+        """Returns a mask over the slab selecting nexus interneurons only.
+
+        The two interneuron populations are separated where firing is ranked, because the nexus
+        sits a hop shallower than the terminus and so arrives at a different level. Ranking them
+        together would let the shallower population take every slot.
+        """
+        return self.kind == int(NeuronKind.NEXUS)
+
 
     def allocNeuronIds(self, count: int, kind: NeuronKind, owner: int = UNOWNED) -> Tensor:
         """Reserves slab slots for a population, reusing freed slots before extending.

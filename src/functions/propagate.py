@@ -7,6 +7,7 @@ from torch import Tensor
 
 from ..models import HazeHyper
 from ..tokens import NeuronKind
+from .economy import SignalEconomy, applyGainControl, calcArrivalGate, makeSignalEconomy
 
 
 @dataclass
@@ -94,7 +95,7 @@ def makeSignalState(lanes: int, neurons: int, edges: int, dtype: torch.dtype) ->
 
 
 def calcEdgeSignal(
-    state: SignalState, src: Tensor, strength: Tensor, log_str: Tensor
+    state: SignalState, src: Tensor, strength: Tensor, log_str: Tensor, corrected: bool = True
 ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
     """Returns each edge's carried value, path statistics, and geometric-mean-corrected actual.
 
@@ -102,11 +103,16 @@ def calcEdgeSignal(
     running product of strengths, and the actual is that value scaled by the geometric mean of
     the strengths traversed. The approximation enters only where paths merge; see
     specs/propagation.md.
+
+    `corrected=False` drops the geometric-mean scaling, which is what the signal economy wants:
+    the correction compensates for a product of strengths below one, and under shares divided by a
+    static incoming budget the mesh no longer applies that decay, so correcting for it would be
+    correcting twice.
     """
     e_val = state.val[:, src] * strength
     e_slog = state.slog[:, src] + log_str
     e_plen = state.plen[:, src] + 1.0
-    e_act = e_val * torch.exp(e_slog / e_plen.clamp_min(1.0))
+    e_act = e_val * torch.exp(e_slog / e_plen.clamp_min(1.0)) if corrected else e_val
     return e_val, e_slog, e_plen, e_act
 
 
@@ -131,18 +137,27 @@ def flowSignalStep(
     is_motor: Tensor,
     is_inter: Tensor,
     hyper: HazeHyper,
+    economy: SignalEconomy | None = None,
+    is_nexus: Tensor | None = None,
 ) -> Tensor:
     """Advances every lane one hop and returns the mask of edges that fired.
 
     Ordering matters in one place: an edge into an inactive motor is refused *before* the fired
     mask is set, so it accumulates nothing and stays out of the learning trace. Masking the
     readout instead would be a different model.
-    """
-    e_val, e_slog, e_plen, e_act = calcEdgeSignal(state, src, strength, log_str)
 
-    edge_pass = (
-        (e_act.abs() > hyper.signal_threshold) & alive_e & active[dst] & (~state.fired)
+    Under an economy the edge carries a share of what its source emits, arrival is divided by the
+    destination's static incoming budget, and selection moves from the edge gate to a rank over
+    neurons. The edge gate then only refuses values too small to be worth propagating.
+    """
+    if economy is not None:
+        strength, log_str = economy.share, economy.log_share
+    e_val, e_slog, e_plen, e_act = calcEdgeSignal(
+        state, src, strength, log_str, corrected=economy is None
     )
+
+    floor = hyper.edge_signal_floor if economy is not None else hyper.signal_threshold
+    edge_pass = (e_act.abs() > floor) & alive_e & active[dst] & (~state.fired)
     if not bool(edge_pass.any()):
         return edge_pass
 
@@ -151,10 +166,11 @@ def flowSignalStep(
     carried = torch.where(is_motor[dst], e_act, e_val)
     contrib = torch.where(edge_pass, carried, torch.zeros_like(carried))
 
-    arrived = torch.zeros_like(state.val).index_add_(1, dst, contrib)
+    raw = torch.zeros_like(state.val).index_add_(1, dst, contrib)
     arrived_slog = torch.zeros_like(state.val).index_add_(1, dst, contrib * e_slog)
     arrived_plen = torch.zeros_like(state.val).index_add_(1, dst, contrib * e_plen)
-    weight = arrived.clamp_min(1e-12)
+    arrived = raw if economy is None else raw / economy.in_scale
+    weight = raw.clamp_min(1e-12)
 
     state.eligibility[:, : contrib.shape[1]] += contrib
 
@@ -163,9 +179,15 @@ def flowSignalStep(
         is_motor.unsqueeze(0), arrived, torch.zeros_like(arrived)
     )
 
-    gate = (arrived >= hyper.neuron_firing_threshold) & is_inter.unsqueeze(0)
+    emitted = arrived
+    if economy is not None:
+        received = (arrived != 0) & is_inter.unsqueeze(0)
+        emitted = applyGainControl(arrived, received, hyper)
+    gate = (emitted >= hyper.neuron_firing_threshold) & is_inter.unsqueeze(0)
+    if economy is not None and is_nexus is not None:
+        gate = calcArrivalGate(emitted, gate, is_nexus, hyper)
     zero = torch.zeros_like(state.val)
-    state.val = torch.where(gate, arrived, zero)
+    state.val = torch.where(gate, emitted, zero)
     state.slog = torch.where(gate, arrived_slog / weight, zero)
     state.plen = torch.where(gate, arrived_plen / weight, zero)
     return edge_pass
@@ -207,9 +229,11 @@ def flowSignalPass(
 
     state.fired = state.fired[:, live]
     state.eligibility = state.eligibility[:, live]
+    economy = makeSignalEconomy(mesh, hyper)
     for _ in range(hyper.max_steps):
         passed = flowSignalStep(
-            state, src, dst, strength, log_str, alive_e, mesh.active, is_motor, is_inter, hyper
+            state, src, dst, strength, log_str, alive_e, mesh.active, is_motor, is_inter, hyper,
+            economy, mesh.is_nexus,
         )
         if not bool(passed.any()):
             break
@@ -228,10 +252,15 @@ def flowSignalPassReference(
 
     This exists to pin what the tensor engine means. The subtle behaviors — carrying path
     statistics, keeping an inhibitory edge's sign in the value while logging only its magnitude,
-    gating an edge once per observation rather than once per hop, and discarding sub-threshold
-    accumulation — all fail silently if implemented wrongly, producing a model that runs and never
-    learns. A slow implementation nobody would mistake for clever is the thing to check the fast
-    one against.
+    gating an edge once per observation rather than once per hop, discarding sub-threshold
+    accumulation, and now dividing an arrival by a *static* incoming budget rather than by what
+    actually fired — all fail silently if implemented wrongly, producing a model that runs and
+    never learns. A slow implementation nobody would mistake for clever is the thing to check the
+    fast one against.
+
+    The economy's rank is computed with a k-th value and `>=` rather than by taking indices, which
+    is what lets this implementation agree exactly: ties all pass, so neither engine depends on an
+    ordering, and a mesh whose strengths are all equal does not silently diverge.
     """
     import math
 
@@ -244,6 +273,20 @@ def flowSignalPassReference(
     kinds = mesh.kind.tolist()
     active = mesh.active.tolist()
 
+    if hyper.signal_economy:
+        out_scale: dict[int, float] = {}
+        for source, _, weight in edges:
+            out_scale[source] = out_scale.get(source, 0.0) + abs(weight)
+        edges = [
+            (source, target, weight / (out_scale[source] / hyper.out_budget))
+            for source, target, weight in edges
+        ]
+        in_scale: dict[int, float] = {}
+        for _, target, weight in edges:
+            in_scale[target] = in_scale.get(target, 0.0) + abs(weight)
+    else:
+        in_scale = {}
+
     features = int(sensor_ids.numel())
     flat = inputs.reshape(-1)[:features].tolist()
     motor_acc: dict[int, float] = {}
@@ -253,6 +296,7 @@ def flowSignalPassReference(
         for feature, sensor in enumerate(sensor_ids.tolist())
     }
     claimed: set[int] = set()
+    floor = hyper.edge_signal_floor if hyper.signal_economy else hyper.signal_threshold
 
     for _ in range(hyper.max_steps):
         arrivals: dict[int, list[tuple[float, float, float]]] = {}
@@ -267,8 +311,8 @@ def flowSignalPassReference(
             value *= weight
             slog += math.log(abs(weight))
             plen += 1.0
-            actual = value * math.exp(slog / max(plen, 1.0))
-            if abs(actual) <= hyper.signal_threshold:
+            actual = value if hyper.signal_economy else value * math.exp(slog / max(plen, 1.0))
+            if abs(actual) <= floor:
                 continue
             claimed.add(index)
             any_fired = True
@@ -278,19 +322,70 @@ def flowSignalPassReference(
         if not any_fired:
             break
 
-        node = {}
-        for target, incoming in arrivals.items():
-            total = sum(c for c, _, _ in incoming)
+        totals = {
+            target: sum(c for c, _, _ in incoming) / max(in_scale.get(target, 1.0), 1.0)
+            for target, incoming in arrivals.items()
+        }
+        for target, total in totals.items():
             if kinds[target] == int(NeuronKind.MOTOR):
                 motor_acc[target] = motor_acc.get(target, 0.0) + total
-                continue
-            if total < hyper.neuron_firing_threshold:
-                continue
-            weight = max(total, 1e-12)
+
+        received = [
+            total
+            for target, total in totals.items()
+            if kinds[target] != int(NeuronKind.MOTOR) and total != 0.0
+        ]
+        gain = calcReferenceGain(received, hyper)
+        emitted = {target: total * gain for target, total in totals.items()}
+
+        gated = [
+            target
+            for target, level in emitted.items()
+            if kinds[target] != int(NeuronKind.MOTOR) and level >= hyper.neuron_firing_threshold
+        ]
+        gated = calcReferenceRank(gated, emitted, kinds, hyper)
+
+        node = {}
+        for target in gated:
+            incoming = arrivals[target]
+            weight = max(sum(c for c, _, _ in incoming), 1e-12)
             node[target] = (
-                total,
+                emitted[target],
                 sum(c * s for c, s, _ in incoming) / weight,
                 sum(c * p for c, _, p in incoming) / weight,
             )
 
     return motor_acc
+
+
+def calcReferenceRank(
+    gated: list[int], totals: dict[int, float], kinds: list[int], hyper: HazeHyper
+) -> list[int]:
+    """Returns the gated interneurons the economy's rank keeps, in plain Python.
+
+    Mirrors `calcArrivalGate`: each population ranked on its own, a k-th value with `>=` so ties
+    all pass, and no dependence on the order the caller happened to build the list in.
+    """
+    if not hyper.signal_economy or hyper.firing_fraction <= 0.0:
+        return gated
+
+    kept: list[int] = []
+    for kind in (int(NeuronKind.NEXUS), int(NeuronKind.TERMINUS)):
+        members = [target for target in gated if kinds[target] == kind]
+        if not members:
+            continue
+        keep = max(1, int(len(members) * hyper.firing_fraction))
+        ranked = sorted((abs(totals[target]) for target in members), reverse=True)
+        cut = ranked[keep - 1]
+        kept.extend(target for target in members if abs(totals[target]) >= cut)
+    return kept
+
+
+def calcReferenceGain(kept: list[float], hyper: HazeHyper) -> float:
+    """Returns the per-hop scalar the economy's gain control applies, in plain Python."""
+    if not hyper.gain_control or not kept:
+        return 1.0
+    level = sum(abs(value) for value in kept) / len(kept)
+    if level <= hyper.edge_signal_floor:
+        return 1.0
+    return min(max(hyper.gain_target / level, 1.0), hyper.gain_ceiling)

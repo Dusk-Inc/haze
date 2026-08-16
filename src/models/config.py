@@ -100,6 +100,14 @@ class HazeHyper(BaseModel):
     sensor_fanout: int = Field(default=defaults.SENSOR_FANOUT, ge=1)
     motor_fanin: int = Field(default=defaults.MOTOR_FANIN, ge=1)
     inhibitory_ratio: float = Field(default=defaults.INHIBITORY_RATIO, ge=0.0, lt=1.0)
+    signal_economy: bool = defaults.SIGNAL_ECONOMY
+    out_budget: float = Field(default=defaults.OUT_BUDGET, gt=0.0)
+    edge_signal_floor: float = Field(default=defaults.EDGE_SIGNAL_FLOOR, gt=0.0, lt=1.0)
+    firing_fraction: float = Field(default=defaults.FIRING_FRACTION, ge=0.0, le=1.0)
+    gain_control: bool = defaults.GAIN_CONTROL
+    gain_target: float = Field(default=defaults.GAIN_TARGET, gt=0.0)
+    gain_ceiling: float = Field(default=defaults.GAIN_CEILING, ge=1.0)
+    prune_share: float = Field(default=defaults.PRUNE_SHARE, gt=0.0, lt=1.0)
     """Share of new edges drawn inhibitory, so the mesh can express what an answer is not.
 
     With only positive attenuating strengths a mesh can excite but never veto, so no input can
@@ -158,8 +166,14 @@ class HazeHyper(BaseModel):
         drives an edge into this range removes it from the mesh's behaviour permanently, because a
         mute edge fires no trace and a trace is what every update is gated on.
 
-        Non-empty under the shipped defaults, where it spans (0.2, 0.527). See specs/propagation.md.
+        Non-empty under the shipped defaults, where it spans (0.2, 0.527). **None under
+        `signal_economy`**, and not because the range is narrow but because the concept does not
+        apply: a strength is then a share of its neuron's output, so scaling every out-edge of a
+        neuron down leaves what it carries unchanged and no absolute strength can make an edge
+        mute. See specs/propagation.md.
         """
+        if self.signal_economy:
+            return None
         ceiling = min(self.calcConductionFloor(hops), self.strength_upper)
         return (self.prune_threshold, ceiling) if ceiling > self.prune_threshold else None
 
@@ -197,6 +211,42 @@ class HazeHyper(BaseModel):
                 "learning rate never moves and the mechanism is dead code"
             )
 
+        if self.firing_fraction > 0.0 and not self.signal_economy:
+            raise ValueError(
+                "firing_fraction needs signal_economy: arrival correlates about +0.7 with a "
+                "neuron's in-degree under the shipped economy, so ranking arrivals selects the "
+                "best-connected neurons and selects the same ones for every input — sparsity with "
+                "no capacity allocated, which is what both fan-out experiments measured"
+            )
+        if self.gain_control and not self.signal_economy:
+            raise ValueError(
+                "gain_control needs signal_economy: it exists to restore the level that ranking "
+                "removes, and nothing ranks without the economy"
+            )
+        if self.signal_economy and self.conductance_healing:
+            raise ValueError(
+                "signal_economy and conductance_healing are incompatible: healing scales a "
+                "neuron's outgoing edges by one factor, and a uniform scale cancels exactly in a "
+                "normalised share, so healing would run every step and change nothing. The "
+                "economy already makes an edge unable to go mute, which is what healing was for"
+            )
+
+        if self.signal_lower >= self.signal_upper:
+            raise ValueError("signal_lower must be below signal_upper")
+
+        if self.signal_economy:
+            if self.neuron_firing_threshold >= self.signal_upper:
+                raise ValueError(
+                    "under signal_economy an arrival is a weighted mean bounded by the signal "
+                    "band, so a neuron gate at or above the band's ceiling can never fire"
+                )
+            if self.signal_lower <= self.edge_signal_floor:
+                raise ValueError(
+                    "signal_lower must exceed edge_signal_floor, or a feature at the band's floor "
+                    "carries nothing and is indistinguishable from not having been observed"
+                )
+            return self
+
         reachable = self.signal_lower * self.strength_init_upper * self.strength_init_upper
         if reachable <= self.signal_threshold:
             raise ValueError(
@@ -206,8 +256,6 @@ class HazeHyper(BaseModel):
                 "its minimum would fire no edge at all and be indistinguishable from not having "
                 "been observed. Raise signal_lower or lower signal_threshold."
             )
-        if self.signal_lower >= self.signal_upper:
-            raise ValueError("signal_lower must be below signal_upper")
         return self
 
 

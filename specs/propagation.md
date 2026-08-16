@@ -262,6 +262,137 @@ multiplies by strengths below one and convergence is what keeps it alive. Fan-ou
 tried against that economy and lost. Changing the economy — so a neuron's arriving value does not
 depend on how many edges fed it — is what would make sparsity affordable, and it is untried.
 
+### The paragraph above is wrong about why, and the correction is the design
+
+Kept as written because it is what was believed, and because the reasoning it contains is exactly
+the reasoning the measurement below refutes. **A path's value multiplies by strengths below one per
+edge, and gains per neuron.** Measured on a fresh mesh, `nexus_size=64`, `terminus_size=32`:
+
+| quantity | measured |
+|---|---|
+| interneuron fan-in | mean 10.06, sd 6.53, range 4-66 |
+| mean \|strength\| | 0.715 |
+| frontier median by hop, seed 5 | 1.34 → 2.08 → 4.35 → 3.14 → 0.89 |
+| `depth_gain`, peak over first hop | 3.1-5.2 over 3 seeds |
+| median arrival across interneurons | 4.6-6.5 over 3 seeds |
+| `neuron_firing_threshold` | 0.5 |
+| signal band ceiling | 0.9 |
+
+With a fan-in of ten and a mean strength of 0.7, a neuron's summed arrival is roughly seven times
+what one of its edges delivered, so **the mesh amplifies about five-fold per hop** and the frontier
+climbs well past the band it started in. Two things follow that re-read most of this file.
+
+**The neuron gate is dead code.** Arrivals sit nine to thirteen times above the threshold meant to
+refuse them, so nothing is ever refused. Nine edges in ten fire not because the gate is permissive
+but because propagation ends by exhausting the fire-once guard instead of by any gate. That is why
+`neuron_firing_threshold` could be described as needing recalibration upward and still understate
+the problem.
+
+**Fan-in is the mesh's only amplifier, and cutting it is why sparsity killed conduction.** The
+fan-out experiments did not remove a compensation for a lossy path; they removed the gain. That
+also explains the bimodality with no stable middle: an amplifier with a hard threshold on its
+output has two fixed points and no third.
+
+So the remedy is not to make signal cheaper to carry. It is to stop taking gain from topology and
+set the level explicitly, which is what `signal_economy` does.
+
+## The signal economy
+
+Off by default (`signal_economy`), and measured below rather than claimed. It changes what a
+strength means, and everything else follows from that one change.
+
+### A strength is a share of what its neuron emits
+
+**Given** the economy is on
+**When** a neuron's outgoing edges are read
+**Then** their magnitudes sum to `out_budget`, and each edge carries that share of what the neuron
+emits.
+
+Two consequences, and the second is the one that matters. Learning becomes zero-sum among
+siblings, since raising one edge lowers the rest — the remedy ROADMAP.md names for gap 1, here a
+property of the representation rather than a mechanism bolted on. And **an edge can no longer be
+driven mute**: a share is a ratio, so scaling every out-edge of a neuron down by any factor leaves
+what it carries unchanged. The absorbing state — learning pushes an edge under the gate, a mute
+edge fires no trace, every update is trace-gated, so nothing can recover it — is not expressible.
+`calcDeadBand` accordingly returns `None`, and `conductance_healing` is refused alongside the
+economy rather than silently becoming a no-op.
+
+### An arrival is divided by a static incoming budget, not by what fired
+
+**Given** a neuron receiving signal
+**When** its arrivals are summed
+**Then** the total is divided by the sum of the shares of **all** its live in-edges, whether or not
+they fired.
+
+Static is the whole distinction, and getting it wrong destroys the mesh's only conjunction. A
+denominator counting the edges that *actually fired* is the fan-in mean: two features arriving
+would produce the same value as one, which is the collapse the per-observation lane was introduced
+to prevent. A static denominator leaves that intact — two arrivals still produce twice one — while
+removing the purely topological advantage of a well-connected neuron.
+
+The two senses of fan-in are different quantities. Capacity, meaning how many edges a neuron
+happens to have, is normalised away. Coincidence, meaning how many of them spoke at once, is kept.
+
+### The level is restored per hop, and the order is not touched
+
+**Given** the economy is on
+**When** a hop's arrivals are computed
+**Then** they may be rescaled by one scalar toward `gain_target` before any gate is applied.
+
+Necessary, and the reason is arithmetic. Only a fraction of a neuron's in-edges fire on any one
+hop, but the denominator counts all of them, so the quotient sits far below the band — a median of
+0.037 against a gate of 0.5, which stops propagation at the first hop and takes conduction reach to
+0.00. **The gain must be applied before the gate, not after.** Rescaling only what already passed
+cannot restore a level that is the reason nothing passed; built that way first, it measured
+identical to no gain at all.
+
+One scalar per hop cannot reorder anything, so level and selection stay separate jobs. A wavefront
+already under `edge_signal_floor` is left alone, so a genuinely dead pass stays dead and
+`calcConductionReach` keeps meaning what it says.
+
+### Firing is ranked, never thresholded
+
+**Given** `firing_fraction` above zero
+**When** the gated interneurons are chosen
+**Then** the top share of each population by arrival is kept, ranked within nexus and terminus
+separately.
+
+Ranked because a hard threshold on arrival was measured to go bimodal, and the cause is structural:
+learning raises strengths, more edges pass, more accumulates, more pass. A rank is immune by
+construction — scaling every strength cannot change how many neurons fire.
+
+Selection takes the k-th value with `>=` rather than `topk` indices, so ties all pass and no
+ordering is implied. That is what lets the plain-Python reference, which has no stable ordering,
+agree exactly, and it is tested on a mesh whose strengths are all equal.
+
+`firing_fraction` requires the economy, and the refusal is not defensive. Arrival correlates +0.67
+to +0.78 with in-degree under the shipped economy, so ranking it selects the best-connected neurons
+and selects the same ones for every input — sparsity with no capacity allocated, which is exactly
+what the fan-out experiments measured.
+
+### Measured, 8 seeds, fresh meshes, 30 held-out rows
+
+| arm | fan-in corr | arrival cv | median | firing share | conditionality | reach |
+|---|---|---|---|---|---|---|
+| shipped | +0.672 | 0.94 | 6.09 | 0.889 | +0.0235 | 1.00 |
+| economy, no gain | -0.191 | 1.01 | 0.024 | 0.243 | +0.0223 | **0.00** |
+| economy, gain, gate 0.25 | **+0.150** | 0.53 | 0.113 | 0.656 | **+0.0395** | 0.96 |
+| economy, gain ceiling 20, gate 0.25 | +0.251 | 0.60 | 0.319 | 0.953 | +0.0071 | 1.00 |
+
+The economy without gain control is unusable: the mesh answers nothing. With it, the correlation
+between a neuron's wiring and what arrives at it falls 78%, conditionality rises 68%, and the share
+of edges firing falls from 0.889 to 0.656 **with no ranking applied at all** — the gate begins to
+bite once arrivals are comparable, which is the first time it has done any work.
+
+Two readings are short of what the economy was aiming at. The correlation of +0.150 sits at the
+boundary rather than clearly inside it, and the spread across neurons (cv 0.53) remains too wide
+for a rank to be reading relevance alone. A larger gain ceiling makes both worse rather than
+better, which is measured above and not yet explained.
+
+`neuron_firing_threshold` is 0.5 and must be lowered to about 0.25 for the economy to conduct at
+all. This file has recorded since the tensor rewrite that the value "remains at its inherited value
+pending the topology work below"; this is that work, and the inherited value is wrong for it.
+
 ## An edge below the conduction floor is alive and mute
 
 **Given** an edge whose strength has fallen below what the gate admits

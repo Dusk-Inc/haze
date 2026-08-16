@@ -15,9 +15,28 @@ from haze.modules.encoders import NumericEncoder, toSignalBand
 from haze.tokens import NeuronKind, defaults
 
 
-def makeWiredModel(seed: int, features: int = 4, labels: int = 3):
+ECONOMIES = {
+    "shipped": {},
+    "economy": {"signal_economy": True, "conductance_healing": False},
+    "ranked": {"signal_economy": True, "conductance_healing": False, "firing_fraction": 0.3},
+    "gained": {
+        "signal_economy": True,
+        "conductance_healing": False,
+        "firing_fraction": 0.3,
+        "gain_control": True,
+    },
+}
+"""The propagation configurations both engines must agree under.
+
+Parametrized rather than tested once because the economy changes what an edge carries, what a
+neuron divides by, which neurons emit, and at what level — four places the two implementations
+could drift apart independently.
+"""
+
+
+def makeWiredModel(seed: int, features: int = 4, labels: int = 3, **hyper):
     """Returns a model with sensors and motors already wired, and their ids."""
-    model = makeHaze(nexus_size=10, terminus_size=5, seed=seed)
+    model = makeHaze(nexus_size=10, terminus_size=5, seed=seed, **hyper)
     sensors = model.mesh.allocNeuronIds(features, NeuronKind.SENSOR, owner=0)
     model.mesh.connectSensors(sensors)
     motors = model.mesh.allocNeuronIds(labels, NeuronKind.MOTOR, owner=1)
@@ -26,15 +45,17 @@ def makeWiredModel(seed: int, features: int = 4, labels: int = 3):
     return model, sensors, motors
 
 
+@pytest.mark.parametrize("economy", list(ECONOMIES))
 @pytest.mark.parametrize("seed", [1, 2, 3, 5, 8, 13])
-def test_flowSignalPass_doesMatchTheReferenceImplementation(seed: int):
+def test_flowSignalPass_doesMatchTheReferenceImplementation(seed: int, economy: str):
     """Asserts the tensor engine computes what the plain-Python reference computes.
 
-    The three subtle behaviors — carrying path statistics, gating an edge once per observation
-    rather than once per hop, and discarding sub-threshold accumulation — all fail silently if
-    implemented wrongly, producing a model that runs and never learns.
+    The subtle behaviors — carrying path statistics, gating an edge once per observation rather
+    than once per hop, discarding sub-threshold accumulation, and dividing an arrival by a static
+    incoming budget rather than by what actually fired — all fail silently if implemented wrongly,
+    producing a model that runs and never learns.
     """
-    model, sensors, motors = makeWiredModel(seed)
+    model, sensors, motors = makeWiredModel(seed, **ECONOMIES[economy])
     inputs = torch.tensor([[0.9, 0.5, 0.7, 0.3]])
 
     state = flowSignalPass(model.mesh, inputs, sensors, model.config.hyper)
