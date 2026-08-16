@@ -91,7 +91,24 @@ Per-label at step 1500, the majority class is the survivor in every seed —
 `1.0,1.0,0.3 | 1.0,0.5,0.5 | 1.0,0.0,0.0 | 1.0,0.0,0.0` at three labels, and
 `1.0,0.0,0.0,0.0,0.0,0.0,0.0` in three of four seeds at nine.
 
-**Those figures were measured with pruning off**, which overstates the severity: `applyPrune` is
+**Those figures predate the defaults that now ship, and no longer describe the mesh.** They were
+taken before `strength_init_lower` rose to 0.55 and `conductance_healing` went on. Re-measured on
+8 seeds, `first-set` capped at `k=9`, same conditions otherwise:
+
+| configuration | reach @1000 | reach @1500 |
+|---|---|---|
+| the table above (4 seeds, pre-mitigation) | 0.51 | 0.52 |
+| pre-mitigation, reproduced on 8 seeds | 0.62 | 0.61 |
+| **shipped today** | **0.88** | **0.78** |
+
+Setting `strength_init_lower` back to 0.4 and healing off reproduces roughly the old figure, so the
+two mitigations account for the gap and the residual is the four-seed sample. **The claim below
+that they leave nine labels "unmoved" is wrong as stated**: it holds for accuracy and not for
+conduction, where they are worth +0.26 reach at step 1000. The erosion is still real — 1.00 → 0.78
+is not 1.00 → 1.00 — but it is roughly half as severe as this file has been asserting.
+
+**Those figures were also measured with pruning off**, which overstates the severity further:
+`applyPrune` is
 called from the trainer's `flowRestructure`, and a harness driving `learn()` directly never invokes
 it. Running the same sweep with pruning every 100 steps at the shipped threshold improves both
 conduction and accuracy — reach 0.52→0.70 and accuracy 0.46→0.58 at nine labels, 0.65→0.75 and
@@ -202,6 +219,11 @@ three labels from 13/40 seeds learning to 23/40, coverage 0.59 → 0.73, and lif
 measured cost elsewhere is nil: at two labels through the full trainer loop over 24 seeds, mean
 reward 0.71 → 0.70, lift +0.24 → +0.24, coverage 0.97 → 0.99; at nine labels, unmoved. Neither
 mechanism touches the representational ceiling, and neither is claimed to.
+
+**"At nine labels, unmoved" is wrong for conduction.** Measured on 8 seeds, the pair is worth
+reach 0.62 → 0.88 at step 1000 and 0.61 → 0.78 at step 1500 — see the correction under gap 1. The
+claim holds for accuracy, which is what it was checked on; it was never checked on the instrument
+the same section spends its length arguing accuracy cannot see.
 
 **Remaining candidates:** per-neuron outgoing normalisation so weakening one edge strengthens its
 siblings rather than draining the neuron; or treating silence as its own outcome rather than as
