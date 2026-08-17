@@ -125,6 +125,18 @@ firing rate, so a neuron that keeps winning raises its own bar and usage is forc
 the one remaining idea aimed squarely at the input-independent winner set, and it needs persistent
 per-neuron state and a checkpoint bump.
 
+**The live lead is wiring, and it was dismissed on bad evidence.** `sensor_fanout` is 48 into a
+nexus of 64, so every sensor reaches three-quarters of the population and two inputs excite almost
+the same neurons. It was measured twice and recorded as not raising the bound — both times on
+`copy` and `majority`, which [specs/growth.md](specs/growth.md) records as saturated at
+initialization and therefore unable to show a capacity gain at all. On `first-set` capped at 3
+labels, fan-out 8 beats 48 on **49 of 72 paired seeds, 3.1σ**, median bound 0.736 against 0.667.
+
+That is a representation result on an untrained mesh, and this section is the reason to be careful
+with it: the economy also improved a structural reading and drove accuracy down. **The owed
+measurement is a trained sweep on the `k` ladder at fan-out 8 against 48**, both arms, 24-40 seeds,
+reported as `ScoreProfile` rather than accuracy. Nothing about `SENSOR_FANOUT` changes before it.
+
 ---
 
 ## 1. Silence is absorbing — the root failure

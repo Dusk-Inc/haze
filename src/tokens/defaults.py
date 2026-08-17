@@ -193,12 +193,20 @@ MIN_EDGE_CAPACITY = 1024
 SENSOR_FANOUT = 48
 """Nexus interneurons each sensor projects to.
 
-Sampling rather than full bipartite wiring is what could give a feature a pathway of its own, but
-it was measured and does not on its own raise what a readout can achieve: at a fan-out of 8 the
+Sampling rather than full bipartite wiring is what could give a feature a pathway of its own. It
+was measured twice and appeared not to raise what a readout can achieve: at a fan-out of 8 the
 probe bound moved from 0.57 to 0.58 on copy and from 0.74 to 0.69 on majority, while edge
 activation went bimodal — either a few percent, where signal never reaches the motors, or
-near-total, where it reaches all of them equally. The default is therefore set high enough to
-keep propagation stable, and left as a knob rather than a claim. See specs/growth.md.
+near-total, where it reaches all of them equally.
+
+**Both measurements were taken on tasks that could not show it.** `copy` and `majority` are
+saturated at initialization, which is why growth could never be demonstrated on them either. On
+`first-set` capped at 3 labels — the one task whose ceiling moves with mesh size — a fan-out of 8
+beats this default on **49 of 72 paired seeds, 3.1σ**, median bound 0.736 against 0.667.
+
+The default is unchanged pending a trained sweep, because that measurement bounds an untrained
+mesh and says the representation supports more, not that learning extracts more. See
+specs/propagation.md.
 """
 
 MOTOR_FANIN = 24

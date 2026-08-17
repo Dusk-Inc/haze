@@ -228,6 +228,35 @@ Fan-out is therefore a configured knob with a wide default rather than a claim, 
 rescue built alongside it is kept on its own merits — pruning is allowed to disconnect a neuron,
 and something has to reconnect it.
 
+### Measured a third time, on a task that can show it, and it does raise the bound
+
+Both measurements above were taken on `copy` and `majority`. [growth.md](growth.md) records that
+those tasks are **saturated at initialization** — the terminus already carries 0.80-0.82 of the
+available information before training — which is why growth could never be demonstrated on them.
+A saturated task cannot show a capacity gain, so the two experiments were run on the instruments
+that structurally could not reveal one.
+
+Re-measured on `first-set` capped at 3 labels, the one task in the suite whose ceiling moves with
+mesh size. Matched probe bound on the terminus, fresh meshes, no training, **72 paired seeds**:
+
+| sensor fan-out | median | mean | p10 | p90 |
+|---|---|---|---|---|
+| 8 | **0.736** | 0.717 | 0.556 | 0.847 |
+| 48 (shipped) | 0.667 | 0.664 | 0.556 | 0.806 |
+
+Fan-out 8 beats 48 on **49 of 72 paired seeds, 3.1σ**, median delta **+0.056**. A 6-seed grid over
+fan-outs 4/8/16/32/48 found 48 the worst cell in both the shipped and the economy arm, 8 of 8
+sparser cells better, which is what prompted this.
+
+**The effect is half what the first confirmation said.** At 24 seeds it read +0.097 median on 16/24
+seeds (p ≈ 0.08, not significant); at 72 it is +0.056 on 49/72. The direction survived and the
+magnitude did not — the fifth time on this branch that a small sample overstated a result.
+
+Two limits on what this claims. It is a bound on an **untrained** mesh, so it says the
+representation supports more, not that learning extracts more; a trained sweep is owed before
+`SENSOR_FANOUT` changes. And the seed lottery dominates it — fan-out 8 spans 0.444 to 0.944 across
+seeds, so the +0.056 is a shift of a wide distribution rather than a reliable per-seed gain.
+
 ### Every input uses the whole mesh
 
 The wiring is one way to be sparse; what actually *fires* is another, and the second one is

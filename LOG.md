@@ -976,3 +976,40 @@ today it is 0.88 at step 1000 and 0.78 at 1500 over 8 seeds; reverting both defa
 refutes the claim that the pair leaves nine labels "unmoved" — true for accuracy, which is what it
 was checked on, false for conduction, where it is worth +0.26 reach. The section making that claim
 is the one arguing at length that accuracy cannot see this failure.
+
+### Sparse wiring does raise the bound, and both earlier measurements were taken on tasks that could not show it
+
+`sensor_fanout` was measured twice, before and after the representation fix, and recorded both
+times as not raising the probe bound. Both were measured on `copy` and `majority` — the two tasks
+specs/growth.md separately records as **saturated at initialization**, carrying 0.80-0.82 of the
+available information before any training. That is the same reason growth could never be
+demonstrated on them: a task with no capacity limit cannot show a capacity gain. The experiment
+was run twice on the instruments that structurally could not reveal the effect.
+
+On `first-set` capped at 3 labels, the one task built because its ceiling moves with mesh size,
+matched probe bound on fresh meshes, **72 paired seeds**:
+
+| sensor fan-out | median | mean | p10 | p90 | min | max |
+|---|---|---|---|---|---|---|
+| 8 | **0.736** | 0.717 | 0.556 | 0.847 | 0.444 | 0.944 |
+| 48 (shipped) | 0.667 | 0.664 | 0.556 | 0.806 | 0.472 | 0.861 |
+
+Fan-out 8 beats the shipped 48 on **49 of 72 paired seeds, 3.1σ**, median delta +0.056. Found by a
+6-seed grid over fan-outs 4/8/16/32/48 in which 48 was the worst cell in both the shipped and the
+economy arm, 8 of 8 sparser cells better.
+
+**Recorded with the shrinkage, because it is the fifth instance on this branch.** At 24 seeds the
+same contrast read +0.097 median on 16/24 seeds — a one-sided p of 0.08, which is not significant,
+and an effect nearly double the truth. The direction survived and the magnitude did not. The
+threshold for calling it real was fixed at 2.5σ before the 72-seed run, precisely because the
+contrast had already been looked at twice and liked twice.
+
+**The seed lottery dominates it.** Fan-out 8 spans 0.444 to 0.944 across seeds against a median
+gap of 0.056, so this is a shift of a wide distribution and not a per-seed gain. Any future claim
+about the probe bound on this mesh needs samples of this size; the 6-seed grid that started this
+had cells differing by less than their spread.
+
+**The default is unchanged.** The bound is measured on an untrained mesh, so it says the
+representation supports more, not that learning extracts more — and this session has just finished
+demonstrating that those come apart, since `signal_economy` raises conduction to 1.00 and drives
+lift negative. A trained sweep on the `k` ladder is owed before `SENSOR_FANOUT` moves.
