@@ -1081,3 +1081,37 @@ replaces that selection with a deliberate one.
 **Caveats.** The economy rows at fan-out 48 are 8 seeds, the rest are 24; the two economy arms are
 compared at unequal n and the comparison is only strong enough to say the difference is small. All
 readings are `first-set` at 1,500 steps and none is a claim about longer training.
+
+### Correction: the paired sigma figures above score ties as losses
+
+The paired statistic used in the two sweeps above counts strict wins and divides by
+`(n * 0.25) ** 0.5` over the full 24 seeds, so a seed where both arms score identically is
+counted against the left arm. Where ties dominate, the reported sigma is inflated and can invert.
+
+It was caught by a row that contradicted itself: the economy arms at nine labels read "fan-out 8
+better on 7/24 (-2.0 sigma)" while the mean delta was **+0.003** and the median exactly **0.000**.
+A median of zero puts at least 12 of 24 seeds at an exact tie, leaving at most 5 strict losses
+against 7 strict wins. Scored with ties excluded that row is **+0.6 sigma**, weakly favouring
+fan-out 8 — the opposite sign and a 2.6 sigma swing.
+
+Which rows this touches, read off their medians:
+
+| table | k | median delta | reported | tie-contaminated |
+|---|---|---|---|---|
+| fan-out | 2 | -0.242 | -2.4σ | no |
+| fan-out | 3 | -0.217 | -4.5σ | no |
+| fan-out | 4 | -0.010 | -4.1σ | likely |
+| fan-out | 6 | +0.000 | -3.7σ | yes |
+| fan-out | 9 | +0.000 | -2.4σ | yes |
+| economy | 3 | +0.005 | 0.0σ | yes |
+| economy | 9 | +0.000 | -2.0σ | yes |
+
+**What survives it.** The arm-level lift comparisons are computed per arm and the bug does not
+touch them: fan-out 48 beats 8 on lift at all five `k`, and the mean deltas at k=6 and k=9 are
+-0.043, both negative. The conclusion that sparse wiring loses under training stands on those.
+What does not stand is the strength claimed for it at k=4, 6, and 9.
+
+All seven arms were re-run with the statistic corrected — ties counted and reported, sign test
+over non-tied seeds only, plus a paired-t — and the corrected figures replace the ones above in
+the entry that follows. This is the sixth statistical claim on this branch to move after the fact,
+and the second to move by more than its own reported error bar.
