@@ -1090,28 +1090,72 @@ counted against the left arm. Where ties dominate, the reported sigma is inflate
 
 It was caught by a row that contradicted itself: the economy arms at nine labels read "fan-out 8
 better on 7/24 (-2.0 sigma)" while the mean delta was **+0.003** and the median exactly **0.000**.
-A median of zero puts at least 12 of 24 seeds at an exact tie, leaving at most 5 strict losses
-against 7 strict wins. Scored with ties excluded that row is **+0.6 sigma**, weakly favouring
-fan-out 8 — the opposite sign and a 2.6 sigma swing.
 
-Which rows this touches, read off their medians:
+**The diagnosis was right and the arithmetic offered for it here was wrong, so both are kept.** The
+claim written first was that a zero median puts at least 12 of 24 seeds at an exact tie, leaving at
+most 5 strict losses against 7 strict wins, and that the row was therefore **+0.6 sigma** with the
+sign inverted. `sorted(delta)[12] == 0.000` says only that the 13th smallest delta is zero, which
+12 negatives, 5 zeros and 7 positives satisfy — and that is what the re-run found. The corrected
+figure is **-1.1 sigma**; the sign test does not invert. A guess was written in the form of a
+derivation.
 
-| table | k | median delta | reported | tie-contaminated |
-|---|---|---|---|---|
-| fan-out | 2 | -0.242 | -2.4σ | no |
-| fan-out | 3 | -0.217 | -4.5σ | no |
-| fan-out | 4 | -0.010 | -4.1σ | likely |
-| fan-out | 6 | +0.000 | -3.7σ | yes |
-| fan-out | 9 | +0.000 | -2.4σ | yes |
-| economy | 3 | +0.005 | 0.0σ | yes |
-| economy | 9 | +0.000 | -2.0σ | yes |
+**A median cannot predict a tie count**, which is the second thing that entry got wrong. It was
+used to guess which rows were contaminated, and the guess missed in both directions: k=3 at median
+-0.217 was called clean and has 7 ties, while k=2 at median -0.242 was also called clean and has 0.
+Tie counts run 0 to 12 across the seven arms with no relation to the median. Nothing in the summary
+lines could have answered it, which is why the per-seed deltas are now dumped to JSON beside each
+log.
 
 **What survives it.** The arm-level lift comparisons are computed per arm and the bug does not
 touch them: fan-out 48 beats 8 on lift at all five `k`, and the mean deltas at k=6 and k=9 are
 -0.043, both negative. The conclusion that sparse wiring loses under training stands on those.
 What does not stand is the strength claimed for it at k=4, 6, and 9.
 
-All seven arms were re-run with the statistic corrected — ties counted and reported, sign test
-over non-tied seeds only, plus a paired-t — and the corrected figures replace the ones above in
-the entry that follows. This is the sixth statistical claim on this branch to move after the fact,
-and the second to move by more than its own reported error bar.
+All seven arms were re-run with the statistic corrected — ties counted and reported, sign test over
+non-tied seeds only, plus a paired-t. **Every arm-level line reproduced byte-identically**, so the
+training is deterministic on its seed list and only the statistic moved.
+
+### The corrected paired figures, and what they cost the claim
+
+Fan-out 8 against 48, 24 paired seeds, 1,500 steps:
+
+| k | wins | losses | ties | sign σ (was) | paired-t | mean delta |
+|---|---|---|---|---|---|---|
+| 2 | 6 | 18 | 0 | **-2.4** (-2.4) | **-4.22** | -0.223 |
+| 3 | 1 | 16 | 7 | **-3.6** (-4.5) | **-4.34** | -0.184 |
+| 4 | 2 | 13 | 9 | **-2.8** (-4.1) | **-3.28** | -0.103 |
+| 6 | 3 | 9 | 12 | **-1.7** (-3.7) | -1.41 | -0.043 |
+| 9 | 6 | 11 | 7 | **-1.2** (-2.4) | -1.22 | -0.043 |
+
+The same contrast with `signal_economy` on:
+
+| k | wins | losses | ties | sign σ (was) | paired-t | mean delta |
+|---|---|---|---|---|---|---|
+| 3 | 12 | 8 | 4 | +0.9 (0.0) | +0.53 | +0.013 |
+| 9 | 7 | 12 | 5 | -1.1 (-2.0) | +0.13 | +0.003 |
+
+**The claim that sparse wiring loses at every label count from 2.4σ to 4.5σ is withdrawn.** It is
+established at two, three and four labels — paired-t -4.22, -4.34, -3.28 — and unproven at six and
+nine, where the honest reading is a consistent negative direction with insufficient evidence.
+`SENSOR_FANOUT` stays at 48; three of five rows still argue for it and none argues against, so the
+decision is unchanged and only its stated strength was wrong.
+
+**The effect falls monotonically with label count and the ties rise as it falls**, -0.223 to -0.043
+against 0 ties to 12. Both have one cause: at six and nine labels most seeds learn nothing in
+*either* arm, so there is nothing for a paired comparison to separate. That is the label cliff
+showing up inside a wiring experiment, not a wiring result.
+
+**The paired-t should have been the reported statistic from the start.** It separates k=2 and k=3
+(-4.22, -4.34) from k=6 and k=9 (-1.41, -1.22) far more cleanly than the sign test, which discards
+magnitude — at k=2 the sign test reads -2.4σ on a mean delta of -0.223, its largest anywhere.
+
+**The economy rows now sit at 24 paired seeds on both arms.** The earlier entry compared 24 against
+8 and flagged the unequal n; that caveat is discharged. Neither statistic is significant at either
+`k`, so the finding is unchanged and better supported: under the economy, wiring density does
+nothing. The k=9 row still disagrees with itself — sign -1.1σ against paired-t +0.13 — because its
+losses outnumber its wins and are smaller than them.
+
+**A drift check, since this branch keeps finding them.** The 8-seed screen of the economy at
+fan-out 48 read lift -0.077 at k=3 and -0.356 at k=9. At 24 seeds those are -0.074 and -0.282. The
+k=3 estimate held to 0.003; the k=9 estimate moved 0.074, and the ROADMAP table quoting -0.356 is
+corrected to -0.282 in the same commit as this entry.

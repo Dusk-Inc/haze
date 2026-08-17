@@ -34,7 +34,8 @@ change — every input currently uses the whole mesh.
 > bearing entry on this branch and supersedes the ordering in the six-gap list.
 >
 > The wiring lead in that entry is also closed. Fan-out 8 raises the untrained probe bound and
-> **loses under training at every label count, 2.4σ to 4.5σ over 24 paired seeds**, because it costs
+> **loses under training at two, three and four labels — paired-t -4.22, -4.34, -3.28 over 24 paired
+> seeds — and shows the same direction unproven at six and nine**, because it costs
 > 0.30-0.55 of conduction reach. `SENSOR_FANOUT` stays at 48, and the sweep says what it is for:
 > redundancy insurance against silence being absorbing, not representational capacity. Pairing it
 > with the economy holds reach at 1.00 and leaves lift negative, so the economy's negative lift does
@@ -147,23 +148,34 @@ reported as `ScoreProfile` rather than accuracy. Nothing about `SENSOR_FANOUT` c
 **That sweep was run, and sparse wiring lost at every label count.** 24 paired seeds per `k`, 1,500
 steps, held-out 200 rows:
 
-| k | arm | reach | conditional | baseline | lift | seeds learning | paired |
-|---|---|---|---|---|---|---|---|
-| 2 | fan-out 8 | 0.45 | 0.70 | 0.54 | +0.160 | 11/24 | |
-| 2 | fan-out 48 | 0.94 | 0.94 | 0.56 | **+0.383** | 21/24 | 8 wins 6/24, **-2.4σ** |
-| 3 | fan-out 8 | 0.28 | 0.57 | 0.55 | +0.022 | 2/24 | |
-| 3 | fan-out 48 | 0.70 | 0.90 | 0.69 | **+0.206** | 16/24 | 8 wins 1/24, **-4.5σ** |
-| 4 | fan-out 8 | 0.37 | 0.69 | 0.66 | +0.028 | 3/24 | |
-| 4 | fan-out 48 | 0.69 | 0.90 | 0.77 | **+0.131** | 11/24 | 8 wins 2/24, **-4.1σ** |
-| 6 | fan-out 8 | 0.28 | 0.60 | 0.59 | +0.007 | 1/24 | |
-| 6 | fan-out 48 | 0.71 | 0.77 | 0.72 | **+0.050** | 7/24 | 8 wins 3/24, **-3.7σ** |
-| 9 | fan-out 8 | 0.22 | 0.43 | 0.44 | -0.007 | 1/24 | |
-| 9 | fan-out 48 | 0.77 | 0.71 | 0.67 | **+0.036** | 8/24 | 8 wins 6/24, **-2.4σ** |
+| k | arm | reach | conditional | baseline | lift | seeds learning | paired-t | sign σ |
+|---|---|---|---|---|---|---|---|---|
+| 2 | fan-out 8 | 0.45 | 0.70 | 0.54 | +0.160 | 11/24 | | |
+| 2 | fan-out 48 | 0.94 | 0.94 | 0.56 | **+0.383** | 21/24 | **-4.22** | -2.4 |
+| 3 | fan-out 8 | 0.28 | 0.57 | 0.55 | +0.022 | 2/24 | | |
+| 3 | fan-out 48 | 0.70 | 0.90 | 0.69 | **+0.206** | 16/24 | **-4.34** | -3.6 |
+| 4 | fan-out 8 | 0.37 | 0.69 | 0.66 | +0.028 | 3/24 | | |
+| 4 | fan-out 48 | 0.69 | 0.90 | 0.77 | **+0.131** | 11/24 | **-3.28** | -2.8 |
+| 6 | fan-out 8 | 0.28 | 0.60 | 0.59 | +0.007 | 1/24 | | |
+| 6 | fan-out 48 | 0.71 | 0.77 | 0.72 | **+0.050** | 7/24 | -1.41 | -1.7 |
+| 9 | fan-out 8 | 0.22 | 0.43 | 0.44 | -0.007 | 1/24 | | |
+| 9 | fan-out 48 | 0.77 | 0.71 | 0.67 | **+0.036** | 8/24 | -1.22 | -1.2 |
 
-`SENSOR_FANOUT` stays at 48. Both readings are real and they point opposite ways: fan-out 8 raises
-the untrained probe bound (49/72 seeds, 3.1σ, +0.056 median) and costs 0.30-0.55 of conduction reach
-under training. The reach loss is roughly 4× the bound gain. The probe cannot see it because the
-probe never trains, so it never triggers the absorbing failure.
+The paired columns favour fan-out 48 throughout; negative means the sparse arm is worse. An earlier
+version of this table reported -2.4σ to -4.5σ across all five rows from a sign test that scored tied
+seeds as losses. Ties run 0 to 12 here, so those figures were inflated unevenly; LOG.md carries the
+defect and the re-run. Every arm-level figure above reproduced byte-identically.
+
+**Sparse wiring's loss is established at two, three and four labels and unproven at six and nine.**
+The effect falls monotonically, mean delta -0.223 to -0.043, and the tie count rises as it falls,
+because at six and nine labels most seeds learn nothing in *either* arm — the label cliff appearing
+inside a wiring experiment rather than a wiring result.
+
+`SENSOR_FANOUT` stays at 48: three of five rows argue for it and none argues against. Both readings
+are real and they point opposite ways — fan-out 8 raises the untrained probe bound (49/72 seeds,
+3.1σ, +0.056 median) and costs 0.30-0.55 of conduction reach under training, roughly 4× the bound it
+gains. The probe cannot see that cost because it never trains, so it never drives an edge under the
+gate.
 
 **This gives `sensor_fanout=48` a mechanism it did not have.** It is not tuned for what the mesh can
 represent; it is redundancy insurance against silence being absorbing. Fewer edges per sensor means
@@ -177,18 +189,26 @@ seeds, against the same arm at fan-out 48:
 |---|---|---|---|---|---|---|---|
 | 3 | 48 | off | 0.70 | 0.90 | 0.69 | **+0.206** | 16/24 |
 | 3 | 8 | off | 0.28 | 0.57 | 0.55 | +0.022 | 2/24 |
-| 3 | 48 | on | **1.00** | 0.44 | 0.51 | -0.077 | 1/8 |
+| 3 | 48 | on | **1.00** | 0.42 | 0.49 | -0.074 | 3/24 |
 | 3 | 8 | on | **1.00** | 0.43 | 0.49 | -0.061 | 4/24 |
 | 9 | 48 | off | 0.77 | 0.71 | 0.67 | +0.036 | 8/24 |
 | 9 | 8 | off | 0.22 | 0.43 | 0.44 | -0.007 | 1/24 |
-| 9 | 48 | on | **1.00** | 0.16 | 0.51 | **-0.356** | 0/8 |
+| 9 | 48 | on | **1.00** | 0.21 | 0.49 | **-0.282** | 0/24 |
 | 9 | 8 | on | **1.00** | 0.21 | 0.49 | -0.279 | 0/24 |
+
+Both economy rows are 24 paired seeds against the same seeds, so the two arms are directly
+comparable: paired-t **+0.53** at three labels and **+0.13** at nine, neither significant. **The
+economy's negative lift does not depend on wiring density.** Sparse wiring was the last explanation
+for that negative lift which did not implicate the economy itself.
 
 The economy takes sparse wiring's reach from 0.28 to 1.00 at three labels and 0.22 to 1.00 at nine —
 full conduction on a quarter of the edges, which nothing else on this branch has reached. Lift stays
-negative at both, and -0.061 against -0.077 and -0.279 against -0.356 are not differences these seed
-counts can distinguish. **The economy's negative lift does not depend on wiring density.** Sparse
-wiring was the last explanation for that negative lift which did not implicate the economy itself.
+negative at both.
+
+An earlier version of this table carried the economy-at-48 rows from an 8-seed screen, at -0.077 and
+-0.356. At 24 seeds they are -0.074 and -0.282: the three-label estimate held to 0.003 and the
+nine-label estimate moved 0.074, which is the sixth time on this branch a figure has shrunk when its
+sample grew.
 
 Reach and lift move in opposite directions in every row of that table. The only arms that learn are
 the ones that refuse to answer for 23-30% of inputs, and both mechanisms built here remove exactly
