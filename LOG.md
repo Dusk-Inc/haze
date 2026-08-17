@@ -1013,3 +1013,71 @@ had cells differing by less than their spread.
 representation supports more, not that learning extracts more — and this session has just finished
 demonstrating that those come apart, since `signal_economy` raises conduction to 1.00 and drives
 lift negative. A trained sweep on the `k` ladder is owed before `SENSOR_FANOUT` moves.
+
+### The bound does not convert: sparse wiring loses at every label count under training
+
+The owed trained sweep. 24 paired seeds per `k`, 1,500 steps, held-out 200 rows, `first-set`
+capped at `k`, both arms on the same seeds:
+
+| k | arm | reach | conditional | baseline | lift | seeds learning | paired |
+|---|---|---|---|---|---|---|---|
+| 2 | fan-out 8 | 0.45 | 0.70 | 0.54 | +0.160 | 11/24 | |
+| 2 | fan-out 48 | 0.94 | 0.94 | 0.56 | **+0.383** | 21/24 | 8 wins 6/24, **-2.4σ** |
+| 3 | fan-out 8 | 0.28 | 0.57 | 0.55 | +0.022 | 2/24 | |
+| 3 | fan-out 48 | 0.70 | 0.90 | 0.69 | **+0.206** | 16/24 | 8 wins 1/24, **-4.5σ** |
+| 4 | fan-out 8 | 0.37 | 0.69 | 0.66 | +0.028 | 3/24 | |
+| 4 | fan-out 48 | 0.69 | 0.90 | 0.77 | **+0.131** | 11/24 | 8 wins 2/24, **-4.1σ** |
+| 6 | fan-out 8 | 0.28 | 0.60 | 0.59 | +0.007 | 1/24 | |
+| 6 | fan-out 48 | 0.71 | 0.77 | 0.72 | **+0.050** | 7/24 | 8 wins 3/24, **-3.7σ** |
+| 9 | fan-out 8 | 0.22 | 0.43 | 0.44 | -0.007 | 1/24 | |
+| 9 | fan-out 48 | 0.77 | 0.71 | 0.67 | **+0.036** | 8/24 | 8 wins 6/24, **-2.4σ** |
+
+`SENSOR_FANOUT` stays at 48. The rule fixed before the sweep had three branches — lift improves at
+k≥3 by ≥2σ, lift flat, or lift worse — and this is the third: the higher bound is paid for
+somewhere the probe does not look. It is paid for in conduction. Reach falls 0.30-0.55 at every
+`k`, which is roughly 4× the +0.056 median bound gain, and the probe never sees it because the
+probe never trains and so never drives an edge under the gate.
+
+**Both readings are real.** Fan-out 8 does raise what the untrained mesh represents (49/72 seeds,
+3.1σ) and does lose what the trained mesh can reach. A representation the mesh cannot conduct to
+is worth nothing, which the economy demonstrated from the opposite side four commits ago.
+
+**This gives the default a mechanism it did not have.** 48 edges per sensor is redundancy
+insurance against silence being absorbing, not a tuning of representational capacity. Fewer edges
+leaves fewer alternative routes when learning pushes some under the gate, and reach tracks that
+directly: 0.22 at fan-out 8 against 0.77 at 48, same `k`, same seeds. The prior reading of this
+default — kept wide "for stability" — was correct about the effect and had no account of the cause.
+
+### The economy's negative lift does not depend on wiring density
+
+If fan-out is insurance against the absorbing failure, the economy should refund the premium: a
+share is a ratio, so no edge can be muted, so the redundancy should stop being necessary. It does.
+24 seeds, same protocol:
+
+| k | wiring | economy | reach | conditional | baseline | lift | seeds learning |
+|---|---|---|---|---|---|---|---|
+| 3 | 48 | off | 0.70 | 0.90 | 0.69 | **+0.206** | 16/24 |
+| 3 | 8 | off | 0.28 | 0.57 | 0.55 | +0.022 | 2/24 |
+| 3 | 48 | on | **1.00** | 0.44 | 0.51 | -0.077 | 1/8 |
+| 3 | 8 | on | **1.00** | 0.43 | 0.49 | -0.061 | 4/24 |
+| 9 | 48 | off | 0.77 | 0.71 | 0.67 | +0.036 | 8/24 |
+| 9 | 8 | off | 0.22 | 0.43 | 0.44 | -0.007 | 1/24 |
+| 9 | 48 | on | **1.00** | 0.16 | 0.51 | **-0.356** | 0/8 |
+| 9 | 8 | on | **1.00** | 0.21 | 0.49 | -0.279 | 0/24 |
+
+Reach goes 0.28 → 1.00 at three labels and 0.22 → 1.00 at nine. Full conduction on a quarter of
+the edges is a configuration nothing else on this branch has produced, and the prediction that
+motivated the run was mechanically exact.
+
+Lift stays negative at both. -0.061 against -0.077, and -0.279 against -0.356, are not differences
+24 and 8 seeds can separate. Sparse wiring was the last remaining explanation for the economy's
+negative lift that did not implicate the economy itself, and it is ruled out.
+
+**Reach and lift move in opposite directions in every row.** The only arms that learn refuse to
+answer for 23-30% of inputs, and both mechanisms built in this session remove exactly that refusal.
+The erosion was selecting the answered set — badly, but not randomly — and no mechanism here
+replaces that selection with a deliberate one.
+
+**Caveats.** The economy rows at fan-out 48 are 8 seeds, the rest are 24; the two economy arms are
+compared at unequal n and the comparison is only strong enough to say the difference is small. All
+readings are `first-set` at 1,500 steps and none is a claim about longer training.

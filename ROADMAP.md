@@ -32,6 +32,13 @@ change — every input currently uses the whole mesh.
 > most of what follows is downstream of it", and that is wrong: closing it completely moved accuracy
 > down. See **The conduction collapse was not the binding constraint** below, which is the load-
 > bearing entry on this branch and supersedes the ordering in the six-gap list.
+>
+> The wiring lead in that entry is also closed. Fan-out 8 raises the untrained probe bound and
+> **loses under training at every label count, 2.4σ to 4.5σ over 24 paired seeds**, because it costs
+> 0.30-0.55 of conduction reach. `SENSOR_FANOUT` stays at 48, and the sweep says what it is for:
+> redundancy insurance against silence being absorbing, not representational capacity. Pairing it
+> with the economy holds reach at 1.00 and leaves lift negative, so the economy's negative lift does
+> not depend on wiring density either.
 
 **Built and defaulted on.** `strength_init_lower` 0.55 keeps every edge born above the conduction
 floor; `conductance_healing` scales a neuron's out-edges back over that floor after each update, so
@@ -136,6 +143,56 @@ That is a representation result on an untrained mesh, and this section is the re
 with it: the economy also improved a structural reading and drove accuracy down. **The owed
 measurement is a trained sweep on the `k` ladder at fan-out 8 against 48**, both arms, 24-40 seeds,
 reported as `ScoreProfile` rather than accuracy. Nothing about `SENSOR_FANOUT` changes before it.
+
+**That sweep was run, and sparse wiring lost at every label count.** 24 paired seeds per `k`, 1,500
+steps, held-out 200 rows:
+
+| k | arm | reach | conditional | baseline | lift | seeds learning | paired |
+|---|---|---|---|---|---|---|---|
+| 2 | fan-out 8 | 0.45 | 0.70 | 0.54 | +0.160 | 11/24 | |
+| 2 | fan-out 48 | 0.94 | 0.94 | 0.56 | **+0.383** | 21/24 | 8 wins 6/24, **-2.4σ** |
+| 3 | fan-out 8 | 0.28 | 0.57 | 0.55 | +0.022 | 2/24 | |
+| 3 | fan-out 48 | 0.70 | 0.90 | 0.69 | **+0.206** | 16/24 | 8 wins 1/24, **-4.5σ** |
+| 4 | fan-out 8 | 0.37 | 0.69 | 0.66 | +0.028 | 3/24 | |
+| 4 | fan-out 48 | 0.69 | 0.90 | 0.77 | **+0.131** | 11/24 | 8 wins 2/24, **-4.1σ** |
+| 6 | fan-out 8 | 0.28 | 0.60 | 0.59 | +0.007 | 1/24 | |
+| 6 | fan-out 48 | 0.71 | 0.77 | 0.72 | **+0.050** | 7/24 | 8 wins 3/24, **-3.7σ** |
+| 9 | fan-out 8 | 0.22 | 0.43 | 0.44 | -0.007 | 1/24 | |
+| 9 | fan-out 48 | 0.77 | 0.71 | 0.67 | **+0.036** | 8/24 | 8 wins 6/24, **-2.4σ** |
+
+`SENSOR_FANOUT` stays at 48. Both readings are real and they point opposite ways: fan-out 8 raises
+the untrained probe bound (49/72 seeds, 3.1σ, +0.056 median) and costs 0.30-0.55 of conduction reach
+under training. The reach loss is roughly 4× the bound gain. The probe cannot see it because the
+probe never trains, so it never triggers the absorbing failure.
+
+**This gives `sensor_fanout=48` a mechanism it did not have.** It is not tuned for what the mesh can
+represent; it is redundancy insurance against silence being absorbing. Fewer edges per sensor means
+fewer alternative routes when learning pushes some under the gate, and reach scales with that — 0.22
+at fan-out 8 against 0.77 at 48, same `k`, same seeds.
+
+**The economy refunds the premium and the refund buys nothing.** Sparse wiring under the economy, 24
+seeds, against the same arm at fan-out 48:
+
+| k | wiring | economy | reach | conditional | baseline | lift | seeds learning |
+|---|---|---|---|---|---|---|---|
+| 3 | 48 | off | 0.70 | 0.90 | 0.69 | **+0.206** | 16/24 |
+| 3 | 8 | off | 0.28 | 0.57 | 0.55 | +0.022 | 2/24 |
+| 3 | 48 | on | **1.00** | 0.44 | 0.51 | -0.077 | 1/8 |
+| 3 | 8 | on | **1.00** | 0.43 | 0.49 | -0.061 | 4/24 |
+| 9 | 48 | off | 0.77 | 0.71 | 0.67 | +0.036 | 8/24 |
+| 9 | 8 | off | 0.22 | 0.43 | 0.44 | -0.007 | 1/24 |
+| 9 | 48 | on | **1.00** | 0.16 | 0.51 | **-0.356** | 0/8 |
+| 9 | 8 | on | **1.00** | 0.21 | 0.49 | -0.279 | 0/24 |
+
+The economy takes sparse wiring's reach from 0.28 to 1.00 at three labels and 0.22 to 1.00 at nine —
+full conduction on a quarter of the edges, which nothing else on this branch has reached. Lift stays
+negative at both, and -0.061 against -0.077 and -0.279 against -0.356 are not differences these seed
+counts can distinguish. **The economy's negative lift does not depend on wiring density.** Sparse
+wiring was the last explanation for that negative lift which did not implicate the economy itself.
+
+Reach and lift move in opposite directions in every row of that table. The only arms that learn are
+the ones that refuse to answer for 23-30% of inputs, and both mechanisms built here remove exactly
+that refusal.
 
 ---
 

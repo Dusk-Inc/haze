@@ -204,9 +204,15 @@ saturated at initialization, which is why growth could never be demonstrated on 
 `first-set` capped at 3 labels — the one task whose ceiling moves with mesh size — a fan-out of 8
 beats this default on **49 of 72 paired seeds, 3.1σ**, median bound 0.736 against 0.667.
 
-The default is unchanged pending a trained sweep, because that measurement bounds an untrained
-mesh and says the representation supports more, not that learning extracts more. See
-specs/propagation.md.
+**The trained sweep was run and it reversed the reading.** 24 paired seeds at each of k=2,3,4,6,9,
+fan-out 8 loses at every one by 2.4σ to 4.5σ and never wins more than 6 of 24 seeds. It costs
+0.30-0.55 of conduction reach, which is roughly 4× the bound it gains, so this default stays at 48.
+The probe cannot see that cost because it never trains, so it never drives an edge under the gate.
+
+What the sweep establishes is why 48 is right: it is redundancy insurance against silence being
+absorbing, not a tuning of what the mesh can represent. Fewer edges per sensor leaves fewer
+alternative routes when learning mutes some. Under `signal_economy`, where an edge cannot go mute,
+fan-out 8 holds reach at 1.00 and lift stays negative anyway. See specs/propagation.md.
 """
 
 MOTOR_FANIN = 24
