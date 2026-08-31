@@ -20,7 +20,7 @@ If you're not using Docker, create a virtual environment and install dependencie
 ```
 python -m venv .env
 source .env/bin/activate     # On Windows: .env\Scripts\activate
-pip install -r requirements.txt
+pip install -e ".[dev]"
 ```
 
 Run a test case using:

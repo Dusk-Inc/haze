@@ -1,0 +1,48 @@
+$schema: '../../../.moon/cache/schemas/project.json'
+
+id: 'haze'
+language: 'python'
+layer: 'library'
+stack: 'backend'
+
+# The public mirror this Unit is split out to. splitsh reads it from the live
+# project graph as project.metadata.mirror; a Unit with no mirror field is
+# private, so absence is the marker and no exclusion list is maintained.
+project:
+  mirror: 'https://github.com/Dusk-Inc/haze.git'
+
+env:
+  IMAGE_PATH: 'haze:dev'
+
+# haze keeps its sources under app/, not src/, so the three tasks .moon/tasks/python.yml
+# provides all point at a directory this repo does not have. Each is overridden here with
+# mergeArgs 'replace', because moon's default merge strategy is 'append' and would keep
+# the base args and add these after them.
+tasks:
+  build:
+    command: 'bash'
+    args:
+      - '-c'
+      - 'python -m compileall -q app'
+    deps:
+      - '~:check-remote-cache'
+    options:
+      mergeArgs: 'replace'
+  install:
+    command: 'bash'
+    args:
+      - '-c'
+      - 'python -m pip install -e ".[dev]"'
+    options:
+      cache: false
+      mergeArgs: 'replace'
+      runInCI: false
+  test:
+    command: 'bash'
+    args:
+      - '-c'
+      - 'python -m pytest app/tests'
+    deps:
+      - '~:check-remote-cache'
+    options:
+      mergeArgs: 'replace'
