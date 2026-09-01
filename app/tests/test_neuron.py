@@ -23,8 +23,8 @@ def reset_injector():
     Injector._instances.clear()
 
 def test_setConnectionStrength_doesRaiseErrorWhenConnectionNotFound():
-    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CONFIG, instance=Config())
+    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CORE, instance=CoreIO())
     registry: Registry = Injector.resolve(GlobalTypes.REGISTRY)
     connections = [
@@ -57,8 +57,8 @@ def test_setConnectionStrength_doesRaiseErrorWhenConnectionNotFound():
         node.put_connection(new_connection)
 
 def test_addConnection_doesAddConnection():
-    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CONFIG, instance=Config())
+    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CORE, instance=CoreIO())
     registry: Registry = Injector.resolve(GlobalTypes.REGISTRY)
     connections = [
@@ -93,8 +93,8 @@ def test_addConnection_doesAddConnection():
     assert new_connections[len(new_connections)-1].get_id() == new_connection.get_id()
 
 def test_addConnection_doesRaiseErrorWhenConnectionAlreadyExists():
-    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CONFIG, instance=Config())
+    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CORE, instance=CoreIO())
     registry: Registry = Injector.resolve(GlobalTypes.REGISTRY)
     connections = [
@@ -131,8 +131,8 @@ def test_addConnection_doesRaiseErrorWhenConnectionAlreadyExists():
         node.post_connection(new_connection)
 
 def test_removeConnection_doesRemoveConnection():
-    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CONFIG, instance=Config())
+    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CORE, instance=CoreIO())
     registry: Registry = Injector.resolve(GlobalTypes.REGISTRY)
     connections = [
@@ -165,8 +165,8 @@ def test_removeConnection_doesRemoveConnection():
         assert nc.get_id() != connections[0].get_id()
 
 def test_removeConnection_doesRaiseErrorWhenConnectionNotFound():
-    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CONFIG, instance=Config())
+    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CORE, instance=CoreIO())
     registry: Registry = Injector.resolve(GlobalTypes.REGISTRY)
     connections = [
@@ -207,8 +207,8 @@ def test_setState_doesChangeState():
     assert neuron.get_state() == 0.5
 
 def test_chooseDefault_doesChooseDefault():
-    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CONFIG, instance=Config())
+    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CORE, instance=CoreIO())
     registry: Registry = Injector.resolve(GlobalTypes.REGISTRY)
     neuron = Inter()
@@ -235,8 +235,8 @@ def test_chooseDefault_doesChooseDefault():
 def test_inter_save_state():
     mock_core = MagicMock(spec=CoreIO)
     mock_core._mesh_path = "mock_mesh_path"
-    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CONFIG, instance=Config())
+    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CORE, instance=mock_core)
     inter = Inter(mesh=MeshType.APERTURE, id=uuid4())
     inter.record = MagicMock(return_value={

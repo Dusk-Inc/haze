@@ -20,8 +20,8 @@ def reset_injector():
     Injector._instances.clear()
 
 def test_addConnection_doesAddConnection():
-    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CONFIG, instance=Config())
+    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CORE, instance=CoreIO())
     registry: Registry = Injector.resolve(GlobalTypes.REGISTRY)
     neuron = Inter()
@@ -36,8 +36,8 @@ def test_addConnection_doesAddConnection():
     assert registry._epsilon[0] == 0.5
 
 def test_addConnection_addsMultipleConnections():
-    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CONFIG, instance=Config())
+    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CORE, instance=CoreIO())
     registry: Registry = Injector.resolve(GlobalTypes.REGISTRY)
     neuron_1 = Inter()

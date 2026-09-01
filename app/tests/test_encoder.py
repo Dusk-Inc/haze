@@ -15,8 +15,8 @@ def reset_injector():
     Injector._instances.clear()
 
 def test_numeric_doesNormalizeData():
-    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CONFIG, instance=Config())
+    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CORE, instance=CoreIO())
     Injector.register(GlobalTypes.AUDITOR, instance=Auditor())
     Injector.register(GlobalTypes.NETWORK, instance=Network())
@@ -32,8 +32,8 @@ def test_numeric_doesNormalizeData():
         assert r > 0 and r < 1
 
 def test_numeric_doesConnectSensors():
-    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CONFIG, instance=Config())
+    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CORE, instance=CoreIO())
     network = Network()
     network.create_network(3,3,3)

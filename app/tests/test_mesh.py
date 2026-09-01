@@ -16,8 +16,8 @@ def reset_injector():
 
 @pytest.fixture
 def mesh() -> Mesh:
-    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CONFIG, instance=Config())
+    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CORE, instance=CoreIO())
     return Mesh(mesh=MeshType.APERTURE)
 

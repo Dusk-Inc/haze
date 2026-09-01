@@ -21,8 +21,8 @@ def test_transmit_handlesSingleBranch():
     sensor = Sensor()
     inter = Inter()
     motor = Motor(answer='test')
-    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CONFIG, instance=Config())
+    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CORE, instance=CoreIO())
     registry: Registry = Injector.resolve(GlobalTypes.REGISTRY)
     sensor_con = Connector(
@@ -49,8 +49,8 @@ def test_transmit_handlesMultipleBranches():
     motor_1 = Motor(answer='test')
     motor_2 = Motor(answer='test1')
     motor_3 = Motor(answer='test1')
-    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CONFIG, instance=Config())
+    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CORE, instance=CoreIO())
     registry: Registry = Injector.resolve(GlobalTypes.REGISTRY)
     connection_list = [
@@ -89,8 +89,8 @@ def test_transmit_doesNotCauseRecursion():
     inter_1 = Inter()
     inter_2 = Inter()
     inter_3 = Inter()
-    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CONFIG, instance=Config())
+    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CORE, instance=CoreIO())
     registry: Registry = Injector.resolve(GlobalTypes.REGISTRY)
 
@@ -118,8 +118,8 @@ def test_transmit_doesNotCauseRecursion():
         pytest.fail("RecursionError occurred during signal transmission")
 
 def test_record_doesRecordConnector():
-    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CONFIG, instance=Config())
+    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CORE, instance=CoreIO())
     registry: Registry = Injector.resolve(GlobalTypes.REGISTRY)
     dendrite = Inter()
@@ -135,8 +135,8 @@ def test_record_doesRecordConnector():
 def test_saveState_doesReturnExpectedStateInFile():
     mock_core = MagicMock(spec=CoreIO)
     mock_core._connection_path = "mock_connection_path"
-    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CONFIG, instance=Config())
+    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CORE, instance=mock_core)
     registry: Registry = Injector.resolve(GlobalTypes.REGISTRY)
 

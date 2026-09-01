@@ -20,8 +20,8 @@ def reset_injector():
 
 # these require encoders now to run properly
 def test_regressor_doesPredictNumber():
-    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CONFIG, instance=Config())
+    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CORE, instance=CoreIO())
     Injector.register(GlobalTypes.AUDITOR, instance=Auditor())
     Injector.register(GlobalTypes.NETWORK, instance=Network())
@@ -50,8 +50,8 @@ def test_regressor_doesPredictNumber():
     assert expected_answer == actual_result
 
 def test_argmax_doesPredictWords():
-    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CONFIG, instance=Config())
+    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CORE, instance=CoreIO())
     Injector.register(GlobalTypes.AUDITOR, instance=Auditor())
     Injector.register(GlobalTypes.NETWORK, instance=Network())
@@ -81,8 +81,8 @@ def test_argmax_doesPredictWords():
     assert expected_answer == actual_result
 
 def test_binary_doesPredictAnswer():
-    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CONFIG, instance=Config())
+    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CORE, instance=CoreIO())
     Injector.register(GlobalTypes.AUDITOR, instance=Auditor())
     Injector.register(GlobalTypes.NETWORK, instance=Network())
@@ -111,8 +111,8 @@ def test_binary_doesPredictAnswer():
     assert expected_answer == actual_answer
 
 def test_softMax_doesPredictAnswer():
-    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CONFIG, instance=Config())
+    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CORE, instance=CoreIO())
     Injector.register(GlobalTypes.AUDITOR, instance=Auditor())
     Injector.register(GlobalTypes.NETWORK, instance=Network())
@@ -141,8 +141,8 @@ def test_softMax_doesPredictAnswer():
     assert len(actual_result) == 2
 
 def test_topK_doesPredictAnswer():
-    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CONFIG, instance=Config())
+    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CORE, instance=CoreIO())
     Injector.register(GlobalTypes.AUDITOR, instance=Auditor())
     Injector.register(GlobalTypes.NETWORK, instance=Network())
@@ -180,8 +180,8 @@ def test_topK_doesPredictAnswer():
     assert expected_answer == actual_result
 
 def test_bitMask_doesPredictAnswer():
-    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CONFIG, instance=Config())
+    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CORE, instance=CoreIO())
     Injector.register(GlobalTypes.AUDITOR, instance=Auditor())
     Injector.register(GlobalTypes.NETWORK, instance=Network())
@@ -219,8 +219,8 @@ def test_bitMask_doesPredictAnswer():
     assert expected_answer == actual_result
 
 def test_vector_doesPredictAnswer():
-    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CONFIG, instance=Config())
+    Injector.register(GlobalTypes.REGISTRY, instance=Registry())
     Injector.register(GlobalTypes.CORE, instance=CoreIO())
     Injector.register(GlobalTypes.AUDITOR, instance=Auditor())
     Injector.register(GlobalTypes.NETWORK, instance=Network())
