@@ -5,12 +5,6 @@ language: 'python'
 layer: 'library'
 stack: 'backend'
 
-# The public mirror this Unit is split out to. splitsh reads it from the live
-# project graph as project.metadata.mirror; a Unit with no mirror field is
-# private, so absence is the marker and no exclusion list is maintained.
-project:
-  mirror: 'https://github.com/Dusk-Inc/haze.git'
-
 env:
   IMAGE_PATH: 'haze:dev'
 
