@@ -2,7 +2,7 @@ from app.src.registry.core import Registry
 from app.src.connector.core import Connector
 from app.src.neuron.core import Neuron, Inter
 from app.src.injector.core import Injector
-from app.src.injector.enums import GlobalTypes
+from app.src.tokens.injector import GlobalTypes
 from app.src.config.core import Config
 from app.src.core_io.core import CoreIO
 import pytest

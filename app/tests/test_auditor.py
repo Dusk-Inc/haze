@@ -1,7 +1,7 @@
 from app.src.auditor.core import Auditor
 from app.src.auditor.models import ActivityModel
 from app.src.injector.core import Injector
-from app.src.injector.enums import GlobalTypes
+from app.src.tokens.injector import GlobalTypes
 from app.src.config.core import Config
 from app.src.network.core import Network
 import pytest

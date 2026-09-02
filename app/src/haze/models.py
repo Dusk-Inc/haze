@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from ..neuron.core import Neuron
 from ..encoder.core import Encoder
-from ..encoder.enums import EncoderType
+from ..tokens.encoder import EncoderType
 from ..decoder.core import Decoder
 from typing import Any
 

@@ -1,12 +1,12 @@
 from app.src.mesh.core import Mesh
-from app.src.mesh.errors import InsufficientNeuronCount, NoMeshLoaded
+from app.src.errors.mesh import InsufficientNeuronCount, NoMeshLoaded
 import pytest
-from app.src.mesh.enums import MeshType
+from app.src.tokens.mesh import MeshType
 from app.src.core_io.core import CoreIO
 from app.src.registry.core import Registry
 from app.src.injector.core import Injector
 from app.src.config.core import Config
-from app.src.injector.enums import GlobalTypes
+from app.src.tokens.injector import GlobalTypes
 
 @pytest.fixture(autouse=True)
 def reset_injector():

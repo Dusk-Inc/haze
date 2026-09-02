@@ -1,18 +1,18 @@
 from app.src.neuron.core import Motor, Inter, Sensor
-from app.src.terminal.errors import IdenticalConnectionError, NoMatchingConnectionError
+from app.src.errors.terminal import IdenticalConnectionError, NoMatchingConnectionError
 import pytest
 from app.src.connector.core import Connector
 from app.src.signal.core import Signal
 from app.src.context.core import Context
 from app.src.transmission.core import Transmission
 from unittest.mock import MagicMock, patch
-from app.src.decoder.enums import DecoderType
-from app.src.encoder.enums import EncoderType
-from app.src.mesh.enums import MeshType
+from app.src.tokens.decoder import DecoderType
+from app.src.tokens.encoder import EncoderType
+from app.src.tokens.mesh import MeshType
 from app.src.core_io.core import CoreIO
 from app.src.registry.core import Registry
 from app.src.injector.core import Injector
-from app.src.injector.enums import GlobalTypes
+from app.src.tokens.injector import GlobalTypes
 from app.src.config.core import Config
 from uuid import uuid4
 

@@ -6,7 +6,7 @@ from app.src.core_io.core import CoreIO
 from unittest.mock import MagicMock, patch
 from app.src.registry.core import Registry
 from app.src.injector.core import Injector
-from app.src.injector.enums import GlobalTypes
+from app.src.tokens.injector import GlobalTypes
 from app.src.config.core import Config
 from uuid import uuid4
 import pytest

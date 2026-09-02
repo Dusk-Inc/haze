@@ -1,5 +1,5 @@
 from src.network.core import Network
-from src.network.errors import NetworkException
+from src.errors.network import NetworkException
 from unittest.mock import mock_open, patch, MagicMock
 from app.src.decoder.core import ArgMax
 import pytest

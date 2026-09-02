@@ -1,30 +1,30 @@
 from ..neuron.core import Motor
 from typing import Any
-from .errors import IncorrectOutputCount, IncorrectOutputType
-from .enums import DecoderType
+from ..errors.decoder import IncorrectOutputCount, IncorrectOutputType
+from ..tokens.decoder import DecoderType
 from ..core_io.core import CoreIO
 from ..injector.core import Injector
-from ..injector.enums import GlobalTypes
+from ..tokens.injector import GlobalTypes
 from ..auditor.core import Auditor
 from ..network.core import Network
 from ..connector.core import Connector
 from ..entity.core import Entity
 from ..neuron_io.core import NeuronIO
-from ..neuron_io.enums import TransformerTypes
+from ..tokens.neuron_io import TransformerTypes
 import numpy as np
 import math
 from typing import Union
-from ..terminal.errors import IdenticalConnectionError
+from ..errors.terminal import IdenticalConnectionError
 from typing import Optional
 from ..utils.calculations import normalize
 
-# decoder doesn't need to know about stuff
 class Decoder(Entity):
     def __init__(
             self, 
             data_types: list[type],
             type: DecoderType
         ):
+        """Bind the decoder's accepted data types and kind, and resolve its shared services."""
         Entity.__init__(self)
         self._outputs: Optional[list[Any]] = None
         self._data_types = data_types
@@ -36,25 +36,32 @@ class Decoder(Entity):
         self._confidence: float = 0.1
 
     def get_last_confidence(self):
+        """Return the confidence recorded on the most recent prediction."""
         return self._confidence
 
     def get_type(self):
+        """Return the DecoderType this decoder implements."""
         return self._type
     
     def get_data_types(self):
+        """Return the output types this decoder accepts."""
         return self._data_types
 
     def get_motors(self) -> list[Motor]:
+        """Return the motor neurons registered to this decoder."""
         return self._io.get_neurons(self._type)
 
     def get_active_motors(self) -> list[Motor]:
+        """Return only the motors currently marked active."""
         motors = self.get_motors()
         return [motor for motor in motors if motor.get_active()]
 
     def get_outputs(self) -> None:
+        """Return the output set this decoder was configured with."""
         return self._outputs
     
     def add_motor(self, answer: Any) -> None:
+        """Add a motor for `answer` unless one already holds it, and wire it into the network."""
         motors = self.get_motors()
         existing_answers = len([motor.answer for motor in motors if motor.answer == answer])
         if existing_answers > 0:
@@ -68,12 +75,14 @@ class Decoder(Entity):
 
 
     def _check_output_type(self, outputs: list[Any]) -> bool:
+        """Return True when every output's type is one this decoder accepts."""
         if len([output for output in outputs if type(output) not in self._data_types]) > 0:
             return False
         
         return True
     
     def set_outputs(self, outputs: list[Any]) -> None:
+        """Replace the output set, adding motors for new answers and activating the matching ones."""
         if not self._check_output_type(outputs):
             raise IncorrectOutputType("Mistmatch between output types and decoder types.")
         
@@ -93,6 +102,7 @@ class Decoder(Entity):
         self.check_terminus()
 
     def _check_decoder(self) -> None:
+        """Raise when no outputs are set or when no signal reached the active motors."""
         if len(self._outputs) == 0:
             raise IncorrectOutputCount("Outputs must be set before prediction can be made.")
         
@@ -101,6 +111,7 @@ class Decoder(Entity):
             raise ValueError("No signal reached the motors. All active motors have a state of 0. This can be because signal did not reach motors, or no data was fed to the network.")
     
     def predict(self, *args, **kwargs):
+        """Check readiness, delegate to the subclass prediction, then record confidence and reset the motors."""
         self._check_decoder()
         result = self._predict_impl(*args, **kwargs)
         self._confidence = self.confidence()
@@ -108,14 +119,17 @@ class Decoder(Entity):
         return result
     
     def _predict_impl(self, *args, **kwargs):
+        """Produce the prediction for this decoder kind; implemented by each subclass."""
         raise NotImplementedError("Method must be implemented by a subclass.")
     
     def _reset_motors(self):
+        """Clear the accumulated signal state on every motor."""
         motors = self.get_motors()
         for m in motors:
             m.reset_state()
     
     def confidence(self, epsilon=1e-9):
+        """Return 1 minus the normalized entropy of the motor signals, so a peaked distribution scores high."""
         motor_states = [motor.get_state() for motor in self.get_motors()]
         signals = np.array(motor_states, dtype=np.float64)
         total = np.sum(signals)
@@ -132,6 +146,7 @@ class Decoder(Entity):
         return confidence
     
     def check_terminus(self):
+        """Connect each motor to every terminus inter it is not already wired to."""
         terminus = self._network.mesh.terminus
         inter_ids = [i.get_id() for i in terminus.get_inters()]
         motors: list[Motor] = self.get_motors()
@@ -150,9 +165,11 @@ class Decoder(Entity):
 
 class Regressor(Decoder):
     def __init__(self):
+        """Configure a regressor over integer and float outputs."""
         Decoder.__init__(self, type=DecoderType.REGRESSOR, data_types=[int, float])
 
     def _predict_impl(self):
+        """Return the activation-weighted centre of mass of the motor answers."""
         motors = self.get_active_motors()
         numerator = sum(motor.get_state() * motor.answer for motor in motors)
         denominator = sum(motor.get_state() for motor in motors)
@@ -166,28 +183,34 @@ class Regressor(Decoder):
 
 class ArgMax(Decoder):
     def __init__(self):
+        """Configure an argmax decoder over string and integer outputs."""
         Decoder.__init__(self, type=DecoderType.ARGMAX, data_types=[str, int])
 
     def _find_max_motor(self) -> Motor:
+        """Return the active motor carrying the highest state."""
         active_motors = self.get_active_motors()
         max_motor = max(active_motors, key=lambda m: m.get_state())
         return max_motor
 
     def _predict_impl(self):
+        """Return the answer held by the most strongly activated motor."""
         max_motor = self._find_max_motor()
         return max_motor.answer
 
 
 class SoftMax(Decoder):
     def __init__(self):
+        """Configure a softmax decoder over string and integer outputs."""
         Decoder.__init__(self, type=DecoderType.SOFTMAX, data_types=[str, int])
 
     def softmax(self, values):
+        """Return `values` exponentiated and normalized to sum to one."""
         exps = [math.exp(v) for v in values]
         total = sum(exps)
         return [v / total for v in exps]
         
     def _predict_impl(self):
+        """Return the softmax distribution over the active motor states."""
         activations = [motor.get_state() for motor in self.get_active_motors()]
         return self.softmax(activations)
     
@@ -195,12 +218,15 @@ class SoftMax(Decoder):
 
 class Binary(Decoder):
     def __init__(self):
+        """Configure a binary decoder over boolean outputs."""
         Decoder.__init__(self, type=DecoderType.BINARY, data_types=[bool])
         
     def set_outputs(self):
+        """Set the output set to True and False."""
         super().set_outputs([True, False])
     
     def _predict_impl(self):
+        """Return the output matching the most strongly activated motor."""
         answers = [motor.get_state() for motor in self.get_active_motors()]
         index = answers.index(max(answers))
         return self._outputs[index]
@@ -209,9 +235,11 @@ class Binary(Decoder):
 
 class Vector(Decoder):
     def __init__(self):
+        """Configure a vector decoder over lists of floats."""
         Decoder.__init__(self, type=DecoderType.VECTOR, data_types=[list[float]])
 
     def _check_output_type(self, outputs: list[list[float]]):
+        """Return True when every output is a list of floats."""
         for vector in outputs:
             if not all(isinstance(coordinate, float) for coordinate in vector):
                 return False
@@ -219,6 +247,7 @@ class Vector(Decoder):
         return True
 
     def _predict_impl(self):
+        """Return the activation-weighted mean of the motor answer vectors."""
         self._check_decoder()
         active_motors = self.get_active_motors()
         result_vector = [0.0] * len(active_motors[0].answer)
@@ -237,13 +266,16 @@ class Vector(Decoder):
 
 class TopK(Decoder):
     def __init__(self):
+        """Configure a top-k decoder over string and integer outputs."""
         Decoder.__init__(self, type=DecoderType.TOP_K, data_types=[str, int])
         self._k = None
 
     def _sort_motors(self) -> list[Motor]:
+        """Return the active motors ordered by descending state."""
         return sorted(self.get_active_motors(), key=lambda motor: motor.get_state(), reverse=True)
         
     def _predict_impl(self, k: int):
+        """Return the answers of the k most strongly activated motors."""
         sorted_motors = self._sort_motors()
         self._k = k
         return [motor.answer for motor in sorted_motors][:k]
@@ -252,9 +284,11 @@ class TopK(Decoder):
 
 class Bitmask(Decoder):
     def __init__(self):
+        """Configure a bitmask decoder over string and integer outputs."""
         Decoder.__init__(self, type=DecoderType.BITMASK, data_types=[str, int])
         self.threshold = 0
         
     def _predict_impl(self, threshold):
+        """Return the answers of every active motor whose state exceeds `threshold`."""
         self.threshold = threshold
         return [motor.answer for motor in self.get_active_motors() if motor.get_state() > threshold]

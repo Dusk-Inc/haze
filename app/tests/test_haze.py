@@ -2,13 +2,13 @@ from app.src.haze.core import Haze
 import numpy as np
 from app.src.registry.core import Registry
 from app.src.injector.core import Injector
-from app.src.injector.enums import GlobalTypes
+from app.src.tokens.injector import GlobalTypes
 from app.src.network.core import Network
 from app.src.neuron.core import Inter
 from app.src.connector.core import Connector
-from app.src.mesh.enums import MeshType
+from app.src.tokens.mesh import MeshType
 from app.src.encoder.core import NumericEncoder, TextEncoder
-from app.src.encoder.enums import EncoderType
+from app.src.tokens.encoder import EncoderType
 from app.src.decoder.core import ArgMax, Regressor
 from app.src.haze.models import InputModel, IdeaModel, DecoderModel
 import pytest

@@ -1,17 +1,18 @@
 from .models import ActivityModel, AuditResultsModel
 from ..config.core import Config
 from ..injector.core import Injector
-from ..injector.enums import GlobalTypes
+from ..tokens.injector import GlobalTypes
 from ..config.core import Config
 from ..injector.core import Injector
 from ..neuron_io.core import NeuronIO
-from ..neuron_io.enums import TransformerTypes
+from ..tokens.neuron_io import TransformerTypes
 from ..utils.calculations import clamp
 from ..network.core import Network
 import numpy as np
 
 class Auditor:
     def __init__(self) -> None:
+        """Start the activity model and the reward and confidence histories, and resolve the shared services."""
         self.activity: ActivityModel = ActivityModel()
         self.reward_history = [1]
         self.confidence_history = [1]
@@ -20,34 +21,41 @@ class Auditor:
         self._network: Network = Injector.resolve(GlobalTypes.NETWORK)
 
     def get_confidence_score(self):
+        """Return the mean of the recorded confidence history."""
         np_confidence = np.array(self.confidence_history)
         return np.mean(np_confidence)
     
     def _update_error_rate(self, reward):
+        """Append `reward` to the history, dropping the oldest once the audit window is full."""
         self.reward_history.append(float(reward))
         if len(self.reward_history) > self.config.audit_window:
             del self.reward_history[0]
 
     def get_error_rate(self):
+        """Return 1 minus the mean recorded reward."""
         rewards = np.array(self.reward_history)
         return 1-np.mean(rewards)
     
     def get_confidence_rate(self):
+        """Return the mean of the recorded confidence history."""
         confidence = np.array(self.confidence_history)
         return np.mean(confidence)
     
     def _update_confidence_rate(self, confidence_score):
+        """Append `confidence_score` to the history, dropping the oldest once the audit window is full."""
         self.confidence_history.append(float(confidence_score))
         if len(self.confidence_history) > self.config.audit_window:
             del self.confidence_history[0]
 
     def stimulate_growth(self, reward: float, confidence: float):
+        """Record this round's reward and confidence, then return the growth verdict."""
         self._update_error_rate(reward=reward)
         self._update_confidence_rate(confidence_score=confidence)
         growth_check = self.check_growth()
         return growth_check
 
     def check_growth(self):
+        """Return the growth verdict once a full audit window shows an error rate above the growth threshold, otherwise no growth."""
         error_rate = self.get_error_rate()
         reward_span = len(self.reward_history)
         confidence_span = len(self.confidence_history)
@@ -71,6 +79,7 @@ class Auditor:
         return clean_audit
 
     def determine_growth(self) -> AuditResultsModel:
+        """Size the nexus and terminus growth from the error rate, confidence, and new motors, then clear the window."""
         total_motors = self._io.get_neuron_total(transformer_type=TransformerTypes.DECODER)
         error_rate = self.get_error_rate()
         confidence = self.get_confidence_score()
@@ -93,6 +102,7 @@ class Auditor:
         )
 
     def get_terminus_growth(self, terminus_growth: int, total_motors: int):
+        """Raise the terminus growth so the terminus can hold every motor."""
         terminus_size = len(self._network.mesh.terminus.get_inters())
         if terminus_size < terminus_growth + total_motors:
             return (total_motors - terminus_size) + terminus_growth
@@ -100,4 +110,5 @@ class Auditor:
         return terminus_growth
 
     def clear(self) -> None:
+        """Reset the activity model."""
         self.activity = ActivityModel()

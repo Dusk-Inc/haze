@@ -5,7 +5,7 @@ from app.src.transmission.core import Transmission
 from app.src.context.core import Context
 from app.src.core_io.core import CoreIO
 from app.src.injector.core import Injector
-from app.src.injector.enums import GlobalTypes
+from app.src.tokens.injector import GlobalTypes
 from app.src.registry.core import Registry
 from app.src.config.core import Config
 from app.src.auditor.core import Auditor

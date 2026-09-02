@@ -1,31 +1,31 @@
-# this class orchestrates the network, encorders, and decoders.
 from ..network.core import Network
 from ..core_io.core import CoreIO
 from ..registry.core import Registry
 from ..neuron.core import Motor, Sensor, Inter
-from ..decoder.enums import DecoderType
-from ..mesh.enums import MeshType
+from ..tokens.decoder import DecoderType
+from ..tokens.mesh import MeshType
 from dataclasses import fields
 from ..connector.core import Connector
 from .models import NeuronPackageModel
-from ..encoder.enums import EncoderType
+from ..tokens.encoder import EncoderType
 from ..decoder.core import Decoder
 from ..encoder.core import Encoder
-from .errors import InvalidRewardError
+from ..errors.haze import InvalidRewardError
 from ..config.core import Config
 from ..auditor.core import Auditor
 from ..injector.core import Injector
-from ..injector.enums import GlobalTypes
+from ..tokens.injector import GlobalTypes
 from ..auditor.models import AuditResultsModel
 from .models import IdeaModel, InputModel
 from ..utils.calculations import clamp
 from ..neuron_io.core import NeuronIO
-from ..neuron_io.enums import TransformerTypes
+from ..tokens.neuron_io import TransformerTypes
 import random
 from typing import Any
 import os
 
 class Haze:
+    """Orchestrate the network, the encoders, and the decoders."""
     def __init__(
             self, 
             model_path: str = None,
@@ -35,6 +35,7 @@ class Haze:
             end_token: str = None,
             seed: int = 42
         ):
+        """Register the shared services, then set the end token, sequential mode, and random seed."""
         Injector.register(name=GlobalTypes.NEURON_IO, instance=NeuronIO())
         Injector.register(name=GlobalTypes.CONFIG, instance=config)
         Injector.register(name=GlobalTypes.CORE, instance=CoreIO(path=model_path, persist=persist))
@@ -51,8 +52,8 @@ class Haze:
         self._lexical_chain: list[IdeaModel] = None
         random.seed(seed)
 
-    # perhaps the end token can be added to the decoder by default and this can set the value to "active" if we need it to.
     def set_lexical_chain(self, lexical_chain: list[IdeaModel]):
+        """Set the lexical chain, adding an end-token motor to the last layer's decoders when sequential."""
         if self._sequential:
             for d in lexical_chain[-1].decoders:
                 d.decoder.add_motor(self._end_token)
@@ -60,6 +61,7 @@ class Haze:
         self._lexical_chain = lexical_chain
 
     def observe(self, input_data: list[Any], encoder: Encoder):
+        """Feed `input_data` through `encoder`, forwarding each layer's predictions into the next layer's encoders."""
         self._current_observation = InputModel(input_data=input_data, encoder=encoder)
         encoder_id = encoder.get_id(as_string=True)
         self._inputs[encoder_id] = input_data
@@ -89,6 +91,7 @@ class Haze:
                 encoder.propogate(decoder.decoder.predict())
 
     def predict(self, limit: int = None, iterations=0):
+        """Return the decoders' predictions, re-observing and reverse-learning when no signal reaches the motors."""
         try:
             result = self.call_decoders(limit=limit)
             return result
@@ -105,6 +108,7 @@ class Haze:
             return self.predict(limit=limit, iterations=iterations)
 
     def call_decoders(self, limit: int = None):
+        """Drive the last layer's decoders until each emits the end token or the iteration limit is reached."""
         if self._lexical_chain is None:
             raise Exception("No lexical chain has been set.")
 
@@ -154,6 +158,7 @@ class Haze:
             nexus_size: int = 3,
             terminus_size: int = 3
         ):
+        """Build a fresh network, or rebuild the mesh, neurons, and connections from the saved model."""
         core: CoreIO = Injector.resolve(GlobalTypes.CORE)
         registry: Registry = Injector.resolve(GlobalTypes.REGISTRY)
         neuron_io: NeuronIO = Injector.resolve(GlobalTypes.NEURON_IO)
@@ -205,6 +210,7 @@ class Haze:
                     n.neuron.post_connection(connector)
 
     def _package_sensors(self, sensor_data: list[dict], encoder_type: EncoderType) -> list[NeuronPackageModel]:
+        """Rebuild sensor neurons from saved data, paired with the connection ids to restore."""
         neurons = []
         for i in sensor_data:
                 neuron = Sensor(
@@ -220,6 +226,7 @@ class Haze:
         return neurons
 
     def _package_motors(self, motor_data: list[dict], decoder_type: DecoderType) -> list[NeuronPackageModel]:
+        """Rebuild motor neurons from saved data, paired with the connection ids to restore."""
         neurons = []
         for i in motor_data:
                 neuron = Motor(
@@ -236,6 +243,7 @@ class Haze:
         return neurons
 
     def _package_inters(self, neuron_data: list[dict], mesh: MeshType) -> list[NeuronPackageModel]:
+        """Rebuild interneurons from saved data, paired with the connection ids to restore."""
         neurons = []
         for i in neuron_data:
                 neuron = Inter(
@@ -252,6 +260,7 @@ class Haze:
 
     
     def learn(self, reward: float = 0.9, reverse: bool = False):
+        """Apply `reward` to the registry, grow the network on the auditor's verdict, and drop connections that fell below threshold."""
         reward = clamp(reward)
         registry: Registry = Injector.resolve(GlobalTypes.REGISTRY)
         auditor: Auditor = Injector.resolve(GlobalTypes.AUDITOR)
@@ -294,6 +303,7 @@ class Haze:
                     self.network.mesh.terminus.connect_neurons(n)
 
     def get_aggregate_confidence(self):
+        """Return the summed last-confidence of the final layer's decoders."""
         last_decoders: list[Decoder] = [decoder_model.decoder for decoder_model in self._lexical_chain[-1].decoders]
         agregate_confidence = sum([decoder.get_last_confidence() for decoder in last_decoders])
         return agregate_confidence

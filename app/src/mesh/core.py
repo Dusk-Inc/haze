@@ -1,28 +1,32 @@
 from ..neuron.core import Inter
-from .errors import InsufficientNeuronCount, NoMeshLoaded
+from ..errors.mesh import InsufficientNeuronCount, NoMeshLoaded
 from ..connector.core import Connector
-from .enums import MeshType
+from ..tokens.mesh import MeshType
 from ..registry.interface import IRegistry
 from ..injector.core import Injector
-from ..injector.enums import GlobalTypes
+from ..tokens.injector import GlobalTypes
 import random
 
 class Mesh:
     def __init__(self, mesh: MeshType):
+        """Start an empty mesh of the given kind and resolve the registry."""
         self._inters: list[Inter] = []
         self.mesh: MeshType = mesh
         self.registry: IRegistry = Injector.resolve(GlobalTypes.REGISTRY)
 
     def is_empty(self) -> bool:
+        """Return True when the mesh holds no interneurons."""
         if len(self._inters) == 0:
             return True
         
         return False
 
     def get_inters(self) -> list[Inter]:
+        """Return the mesh's interneurons."""
         return self._inters
 
     def add_neurons(self, neurons: int):
+        """Add `neurons` interneurons, wire them into the mesh, and return them."""
         temp_inters: list[Inter] = []
         
         for _ in range(neurons):
@@ -35,6 +39,7 @@ class Mesh:
         return temp_inters
     
     def connect_neurons(self, neurons: list[Inter]):
+        """Wire each neuron to a random sample of the existing interneurons, registering every connector."""
         k = len(self._inters)
         for i in neurons:
             i.set_k(k)
@@ -51,6 +56,7 @@ class Mesh:
             i.save_state()
 
     def record(self):
+        """Return the mesh's neurons and connections, raising when no mesh is loaded."""
         if len(self._inters) == 0:
             raise NoMeshLoaded("No mesh has been created or loaded.")
         neurons = []

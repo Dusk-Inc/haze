@@ -1,13 +1,15 @@
 from ..connector.core import Connector
-from .errors import NoMatchingConnectionError
-from.errors import IdenticalConnectionError
+from ..errors.terminal import NoMatchingConnectionError
+from ..errors.terminal import IdenticalConnectionError
 
 class Terminal():
     def __init__(self):
+        """Start with an empty connection list."""
         super().__init__()
         self._connections: list[Connector] = []
 
     def put_connection(self, connection: Connector) -> None:
+        """Replace the stored connection sharing `connection`'s id, raising when none matches."""
         for x, c in enumerate(self._connections):
             if c.get_id() == connection.get_id():
                 self._connections[x] = connection
@@ -16,9 +18,11 @@ class Terminal():
         raise NoMatchingConnectionError(f"Error: there is no connection with the id: {connection.get_id()} found in connection list.")
 
     def get_connections(self) -> list[Connector]:
+        """Return the connection list."""
         return self._connections
 
     def post_connection(self, connection: Connector) -> None:
+        """Append `connection`, raising when its id or its dendrite is already connected, then re-pick the default."""
         new_dendrite = connection.get_dendrite()
 
         for c in self._connections:
@@ -33,6 +37,7 @@ class Terminal():
         self.choose_default()
 
     def delete_connection(self, connection: Connector) -> None:
+        """Remove the connection sharing `connection`'s id, raising when none matches."""
         for x, c in enumerate(self._connections):
             if c.get_id() == connection.get_id():
                 del self._connections[x]
@@ -41,9 +46,11 @@ class Terminal():
         raise NoMatchingConnectionError(f"Error: there is no connection with the id: {connection.get_id()} found in connection list.")
     
     def clear_connections(self):
+        """Drop every connection."""
         self._connections = []
     
     def choose_default(self):
+        """Mark the stronger of each adjacent pair the default connection."""
         x = 0
 
         while x < len(self._connections):

@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 from ..neuron.core import Sensor, Motor
 from typing import Union
-from .enums import TransformerTypes
-from ..encoder.enums import EncoderType
-from ..decoder.enums import DecoderType
+from ..tokens.neuron_io import TransformerTypes
+from ..tokens.encoder import EncoderType
+from ..tokens.decoder import DecoderType
 
 @dataclass
 class NeuronState:
